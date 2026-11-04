@@ -1,0 +1,5 @@
+# Security notes and residual risks
+
+Implemented: bcrypt password hashing, short-lived JWT access tokens, server-side role checks, ownership checks for booking reads/cancellation, Zod request validation, Helmet, CORS allowlist in production, API rate limiting, JSON body size limit, parameterized SQL, SQLite foreign keys, transactional booking/payment review, no secrets in the mobile bundle, Expo SecureStore token persistence, and activity/outbox records.
+
+Important limitations: logout currently instructs the client to delete its token; access tokens are not individually revoked server-side before expiry. Refresh-token rotation is not implemented. Payment proof file upload and malware scanning are not implemented; `proofPath` is metadata only and must not be treated as proof of payment. GCash/bank payment is not processed by a payment gateway; staff manually verify submissions. CORS development mode permits any origin. Configure a strict production origin list. Do not expose SQLite files or upload directories publicly. Rotate the demo admin password and JWT secret before any shared deployment. Conduct an independent penetration test before production use.

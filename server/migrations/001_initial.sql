@@ -1,0 +1,2 @@
+-- Initial schema is maintained in src/database/schema.ts and executed on API startup.
+-- This file is a human-readable migration marker; do not edit the live database manually.
