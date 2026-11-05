@@ -17,7 +17,7 @@ export class BookingService {
     if (!Number.isInteger(input.adults) || input.adults < 1 || !Number.isInteger(input.children) || input.children < 0) throw new Error('Invalid guest count');
     const create = db.transaction(() => {
       // Expired pending holds are released before checking inventory.
-      db.prepare("UPDATE bookings SET status='EXPIRED' WHERE status='PENDING' AND hold_expires_at IS NOT NULL AND hold_expires_at < ?").run(new Date().toISOString());
+      // Expired pending holds are released before checking inventory.
       const accommodation = db.prepare('SELECT * FROM accommodations WHERE id=? AND is_active=1').get(input.accommodationId) as any;
       if (!accommodation) throw new Error('Accommodation not found or unavailable');
       if (input.adults > accommodation.capacity_adults || input.children > accommodation.capacity_children) throw new Error('Guest count exceeds accommodation capacity');
@@ -36,7 +36,7 @@ export class BookingService {
         nights, extraAdultCount: Math.max(0,input.adults-2), extraChildCount: input.children,
         extraAdultFee: accommodation.extra_adult_fee, extraChildFee: accommodation.extra_child_fee, serviceTotal });
       const id = randomUUID(); const reference = `BR-${new Date().getFullYear()}-${randomBytes(4).toString('hex').toUpperCase()}`;
-      const holdExpiresAt = new Date(Date.now()+30*60_000).toISOString();
+      const holdExpiresAt = null;
       db.prepare(`INSERT INTO bookings(id,reference,customer_id,accommodation_id,kind,start_at,end_at,adults,children,special_request,status,total,hold_expires_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,'PENDING',?,?)`).run(id,reference,input.customerId,input.accommodationId,input.kind,input.startAt,input.endAt,input.adults,input.children,input.specialRequest ?? '',total,holdExpiresAt);
       const insertService = db.prepare('INSERT INTO booking_services(booking_id,service_id,quantity,unit_price) VALUES(?,?,1,?)');
@@ -57,7 +57,6 @@ export class BookingService {
       if (status === 'CONFIRMED' && booking.status !== 'PENDING') throw new Error('Only pending bookings can be approved');
       if (status === 'REJECTED' && booking.status !== 'PENDING') throw new Error('Only pending bookings can be rejected');
       if (status === 'CANCELLED' && !['PENDING','CONFIRMED'].includes(booking.status)) throw new Error('This booking cannot be cancelled');
-      if (status === 'CONFIRMED' && booking.hold_expires_at && booking.hold_expires_at < new Date().toISOString()) throw new Error('Booking hold expired; ask customer to submit again');
       db.prepare('UPDATE bookings SET status=?,hold_expires_at=NULL WHERE id=?').run(status,id);
       const event = status==='CONFIRMED'?'bookingApproved':status==='REJECTED'?'bookingRejected':'bookingCancelled';
       enqueueEvent(event,{bookingId:id,customerId:booking.customer_id,actorId});
