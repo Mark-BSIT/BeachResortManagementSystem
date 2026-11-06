@@ -1,0 +1,11 @@
+import Database from 'better-sqlite3';
+import { mkdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { env } from '../config/env.js';
+import { schemaSql } from './schema.js';
+const filename = resolve(process.cwd(), env.DATABASE_FILE);
+mkdirSync(dirname(filename), { recursive: true });
+export const db = new Database(filename);
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+db.exec(schemaSql);

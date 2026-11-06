@@ -5,8 +5,15 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "splash": {"backgroundColor":"#F5F0E6"},
-    "android": {"package":"com.tidehaven.resort"},
-    "plugins": ["expo-secure-store"]
+    "splash": {
+      "backgroundColor": "#F5F0E6"
+    },
+    "android": {
+      "package": "com.tidehaven.resort"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "@react-native-community/datetimepicker"
+    ]
   }
 }

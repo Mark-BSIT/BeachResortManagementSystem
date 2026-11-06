@@ -9,6 +9,7 @@ import { env } from "../config/env.js";
 import { authenticate, requireRole } from "../middleware/auth.js";
 import { bookingService } from "../services/booking.service.js";
 import { enqueueEvent } from "../services/outbox.service.js";
+import { getBookingBill } from "../services/billing.service.js";
 
 export const api = Router();
 const asyncRoute =
@@ -192,6 +193,26 @@ api.get("/bookings/:id", authenticate, (req, res) => {
   }
   res.json({ data: row });
 });
+// Get consolidated bill for a booking
+api.get("/bookings/:id/bill", authenticate, (req, res) => {
+  const booking = db
+    .prepare("SELECT id, customer_id FROM bookings WHERE id = ?")
+    .get(req.params.id) as
+    | { id: string; customer_id: string }
+    | undefined;
+
+  if (
+    !booking ||
+    (req.user!.role !== "ADMIN" && booking.customer_id !== req.user!.id)
+  ) {
+    res.status(404).json({ error: "Booking not found" });
+    return;
+  }
+
+  const bill = getBookingBill(booking.id);
+
+  res.json({ data: bill });
+});
 api.post(
   "/bookings/:id/cancel",
   authenticate,
@@ -251,62 +272,89 @@ api.patch("/notifications/:id/read", authenticate, (req, res) => {
 api.post("/payments", authenticate, requireRole("CUSTOMER"), (req, res) => {
   const schema = z.object({
     bookingId: z.string().min(1),
-    method: z.enum(["GCASH", "BANK_TRANSFER", "CASH_ON_ARRIVAL"]),
+    method: z.literal("GCASH"),
     amount: z.number().positive(),
-    referenceNumber: z.string().max(100).optional(),
+    referenceNumber: z.string().min(1).max(100),
     proofPath: z.string().max(500).optional(),
   });
+
   const d = schema.parse(req.body);
+
   const tx = db.transaction(() => {
     const booking = db
       .prepare("SELECT * FROM bookings WHERE id=? AND customer_id=?")
       .get(d.bookingId, req.user!.id) as any;
-    if (!booking || !["PENDING", "CONFIRMED"].includes(booking.status))
+
+    if (!booking || !["PENDING", "CONFIRMED"].includes(booking.status)) {
       throw new Error("Eligible booking not found");
-    const paid = Number(
-      (
-        db
-          .prepare(
-            "SELECT COALESCE(SUM(amount),0) AS total FROM payments WHERE booking_id=? AND status IN ('SUBMITTED','VERIFIED')",
-          )
-          .get(d.bookingId) as any
-      ).total,
-    );
-    if (d.amount > Math.max(0, Number(booking.total) - paid))
-      throw new Error("Payment exceeds the remaining balance");
+    }
+
+    const bill = getBookingBill(d.bookingId);
+
+    if (d.amount > bill.availableToSubmit + 0.001) {
+      throw new Error("Payment exceeds the available balance");
+    }
+
+    if (d.amount <= 0) {
+      throw new Error("Payment amount must be greater than zero");
+    }
+
     const id = randomUUID();
-    db.prepare(
-      "INSERT INTO payments(id,booking_id,customer_id,method,amount,reference_number,proof_path,status) VALUES(?,?,?,?,?,?,?,'SUBMITTED')",
-    ).run(
+
+    db.prepare(`
+      INSERT INTO payments (
+        id,
+        booking_id,
+        customer_id,
+        method,
+        amount,
+        reference_number,
+        proof_path,
+        status
+      )
+      VALUES (?, ?, ?, 'GCASH', ?, ?, ?, 'SUBMITTED')
+    `).run(
       id,
       d.bookingId,
       req.user!.id,
-      d.method,
       d.amount,
-      d.referenceNumber ?? null,
-      d.proofPath ?? null,
+      d.referenceNumber,
+      d.proofPath ?? null
     );
-    enqueueEvent("paymentSubmitted", { paymentId: id, bookingId: d.bookingId });
+
+    enqueueEvent("paymentSubmitted", {
+      paymentId: id,
+      bookingId: d.bookingId,
+    });
+
     const admins = db
       .prepare("SELECT id FROM users WHERE role='ADMIN' AND is_active=1")
       .all() as Array<{ id: string }>;
-    const notify = db.prepare(
-      "INSERT INTO notifications(id,user_id,title,message,type) VALUES(?,?,?,?,?)",
-    );
-    for (const admin of admins)
+
+    const notify = db.prepare(`
+      INSERT INTO notifications (
+        id, user_id, title, message, type
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    for (const admin of admins) {
       notify.run(
         randomUUID(),
         admin.id,
         "Payment submitted",
-        `A payment for booking ${booking.reference} needs review.`,
-        "PAYMENT",
+        `A GCash payment for booking ${booking.reference} needs review.`,
+        "PAYMENT"
       );
+    }
+
     return {
       id,
       status: "SUBMITTED",
-      message: "Payment submitted for manual review",
+      message: "GCash payment submitted for manual verification",
     };
   });
+
   res.status(201).json({ data: tx.immediate() });
 });
 api.get("/payments/mine", authenticate, requireRole("CUSTOMER"), (req, res) =>
@@ -381,36 +429,86 @@ api.get("/admin/payments", (_req, res) =>
       .all(),
   }),
 );
-api.patch("/admin/payments/:id/status", (req, res) => {
-  const d = z
-    .object({ status: z.enum(["VERIFIED", "REJECTED"]) })
-    .parse(req.body);
-  const tx = db.transaction(() => {
-    const p = db
-      .prepare("SELECT * FROM payments WHERE id=?")
-      .get(req.params.id) as any;
-    if (!p) throw new Error("Payment not found");
-    if (p.status !== "SUBMITTED")
-      throw new Error("Payment has already been reviewed");
-    db.prepare(
-      "UPDATE payments SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=?",
-    ).run(d.status, req.user!.id, p.id);
-    enqueueEvent(
-      d.status === "VERIFIED" ? "paymentVerified" : "paymentRejected",
-      { paymentId: p.id, bookingId: p.booking_id },
-    );
-    db.prepare(
-      "INSERT INTO notifications(id,user_id,title,message,type) VALUES(?,?,?,?,?)",
-    ).run(
-      randomUUID(),
-      p.customer_id,
-      d.status === "VERIFIED" ? "Payment verified" : "Payment needs attention",
-      `Your payment submission has been ${d.status.toLowerCase()}.`,
-      "PAYMENT",
-    );
-    return { id: p.id, status: d.status };
+// Record cash actually collected by the resort
+api.post("/admin/payments/cash-collection", (req, res) => {
+  const schema = z.object({
+    bookingId: z.string().min(1),
+    amount: z.number().positive(),
+    referenceNumber: z.string().max(100).optional(),
   });
-  res.json({ data: tx.immediate() });
+
+  const d = schema.parse(req.body);
+
+  const tx = db.transaction(() => {
+    const booking = db
+      .prepare("SELECT * FROM bookings WHERE id = ?")
+      .get(d.bookingId) as any;
+
+    if (!booking || !["CONFIRMED", "CHECKED_IN"].includes(booking.status)) {
+      throw new Error("Only confirmed or checked-in bookings can receive cash");
+    }
+
+    const bill = getBookingBill(d.bookingId);
+
+    if (d.amount > bill.availableToSubmit + 0.001) {
+      throw new Error(
+        "Cash collection exceeds the available balance. Review pending GCash submissions first."
+      );
+    }
+
+    const id = randomUUID();
+
+    db.prepare(`
+      INSERT INTO payments (
+        id,
+        booking_id,
+        customer_id,
+        method,
+        amount,
+        reference_number,
+        status,
+        reviewed_by,
+        reviewed_at
+      )
+      VALUES (?, ?, ?, 'CASH_ON_ARRIVAL', ?, ?, 'VERIFIED', ?, CURRENT_TIMESTAMP)
+    `).run(
+      id,
+      d.bookingId,
+      booking.customer_id,
+      d.amount,
+      d.referenceNumber ?? null,
+      req.user!.id
+    );
+
+    enqueueEvent("cashPaymentCollected", {
+      paymentId: id,
+      bookingId: d.bookingId,
+      amount: d.amount,
+    });
+
+    db.prepare(`
+      INSERT INTO notifications (
+        id, user_id, title, message, type
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      randomUUID(),
+      booking.customer_id,
+      "Cash payment received",
+      `Your cash payment of ₱${d.amount.toFixed(2)} has been recorded.`,
+      "PAYMENT"
+    );
+
+    return {
+      id,
+      method: "CASH_ON_ARRIVAL",
+      amount: d.amount,
+      status: "VERIFIED",
+      message: "Cash collection recorded successfully",
+    };
+  });
+
+  res.status(201).json({ data: tx.immediate() });
 });
 api.get("/admin/customers", (req, res) => {
   const q = typeof req.query.q === "string" ? `%${req.query.q}%` : "%";

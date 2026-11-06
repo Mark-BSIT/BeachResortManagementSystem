@@ -6,7 +6,7 @@ export type DomainEventName =
   | 'paymentSubmitted' | 'paymentVerified' | 'paymentRejected'
   | 'accommodationCreated' | 'accommodationUpdated' | 'accommodationDeactivated'
   | 'notificationCreated' | 'notificationRead' | 'customerCheckedIn' | 'customerCheckedOut'
-  | 'reviewSubmitted';
+  | 'reviewSubmitted' | "cashPaymentCollected";
 
 export interface DomainEvent<T = Record<string, unknown>> {
   eventId: string;

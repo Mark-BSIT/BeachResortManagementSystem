@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -10,7 +10,6 @@ import {
   RefreshControl,
   SafeAreaView,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -21,7 +20,14 @@ import { api, clearToken, saveToken } from "./src/services/api";
 import { uiEvents } from "./src/events/event-bus";
 
 type Role = "ADMIN" | "CUSTOMER";
-type User = { id: string; email: string; role: Role; fullName: string };
+
+type User = {
+  id: string;
+  email: string;
+  role: Role;
+  fullName: string;
+};
+
 type Accommodation = {
   id: string;
   name: string;
@@ -33,6 +39,7 @@ type Accommodation = {
   night_price: number;
   image_url?: string;
 };
+
 type Booking = {
   id: string;
   reference: string;
@@ -43,6 +50,7 @@ type Booking = {
   start_at: string;
   end_at: string;
 };
+
 type Payment = {
   id: string;
   booking_id: string;
@@ -53,6 +61,7 @@ type Payment = {
   status: string;
   reference_number?: string;
 };
+
 const C = {
   ocean: "#087E8B",
   teal: "#13A89E",
@@ -65,8 +74,18 @@ const C = {
   red: "#B94A48",
   green: "#23836F",
 };
+
 const money = (v: number) =>
-  `₱${Number(v || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+  `₱${Number(v || 0).toLocaleString("en-PH", {
+    maximumFractionDigits: 2,
+  })}`;
+
+const formatDate = (date: Date) =>
+  date.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
 function Field({
   label,
@@ -93,12 +112,15 @@ function Field({
         placeholderTextColor="#9AAEAC"
         secureTextEntry={secureTextEntry}
         keyboardType={keyboardType}
-        autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
+        autoCapitalize={
+          keyboardType === "email-address" ? "none" : "sentences"
+        }
         style={s.input}
       />
     </View>
   );
 }
+
 function Button({
   title,
   onPress,
@@ -127,7 +149,14 @@ function Button({
     </Pressable>
   );
 }
-function Header({ title, subtitle }: { title: string; subtitle?: string }) {
+
+function Header({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
   return (
     <View style={{ marginBottom: 18 }}>
       <Text style={s.heading}>{title}</Text>
@@ -139,15 +168,19 @@ function Header({ title, subtitle }: { title: string; subtitle?: string }) {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [booting, setBooting] = useState(true);
+
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState("Home");
+
   const [items, setItems] = useState<Accommodation[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("All");
+
   const categories = [
     "All",
     "Cottages",
@@ -155,34 +188,54 @@ export default function App() {
     "Day-use Packages",
     "Overnight Packages",
   ];
+
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [dashboard, setDashboard] = useState<Record<string, number>>({});
+
   const [payBooking, setPayBooking] = useState<Booking | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payReference, setPayReference] = useState("");
-  const [payMethod, setPayMethod] = useState<
-    "GCASH" | "BANK_TRANSFER" | "CASH_ON_ARRIVAL"
-  >("GCASH");
+
+  // Customer payment submissions currently use GCash only.
+  const payMethod = "GCASH" as const;
+
   const [refreshing, setRefreshing] = useState(false);
+
   const [selected, setSelected] = useState<Accommodation | null>(null);
   const [kind, setKind] = useState<"DAY_USE" | "OVERNIGHT">("DAY_USE");
-  const [startAt, setStartAt] = useState("");
-  const [endAt, setEndAt] = useState("");
+
+  // Reservation calendar states
+  const [arrivalDate, setArrivalDate] = useState(new Date());
+
+  const [departureDate, setDepartureDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow;
+  });
+
+  const [showArrivalPicker, setShowArrivalPicker] = useState(false);
+  const [showDeparturePicker, setShowDeparturePicker] = useState(false);
+
   const [adults, setAdults] = useState("2");
   const [children, setChildren] = useState("0");
   const [special, setSpecial] = useState("");
+
+  // Restore logged-in user
   useEffect(() => {
     (async () => {
       try {
         const { user } = await api<{ user: User }>("/auth/me");
         setUser(user);
       } catch {
+        // No active session.
       } finally {
         setBooting(false);
       }
     })();
   }, []);
+
+  // Event listener
   useEffect(() => {
     const off = uiEvents.on("loginSucceeded", () => {
       setTab("Home");
@@ -190,9 +243,13 @@ export default function App() {
 
     return off;
   }, []);
+
+  // Load dashboard and application data
   const load = async () => {
     if (!user) return;
+
     setRefreshing(true);
+
     try {
       if (user.role === "CUSTOMER") {
         const [a, b, p] = await Promise.all([
@@ -200,10 +257,14 @@ export default function App() {
           api<{ data: Booking[] }>("/bookings/mine"),
           api<{ data: Payment[] }>("/payments/mine"),
         ]);
+
         setItems(a.data);
         setBookings(b.data);
         setPayments(p.data);
-        uiEvents.emit("catalogLoaded", { count: a.data.length });
+
+        uiEvents.emit("catalogLoaded", {
+          count: a.data.length,
+        });
       } else {
         const [d, b, p, a] = await Promise.all([
           api<{ data: Record<string, number> }>("/admin/dashboard"),
@@ -211,6 +272,7 @@ export default function App() {
           api<{ data: Payment[] }>("/admin/payments"),
           api<{ data: Accommodation[] }>("/accommodations"),
         ]);
+
         setDashboard(d.data);
         setBookings(b.data);
         setPayments(p.data);
@@ -222,27 +284,47 @@ export default function App() {
       setRefreshing(false);
     }
   };
+
   useEffect(() => {
     load();
   }, [user]);
+
+  // Login and registration
   const auth = async () => {
     setBusy(true);
+
     try {
       if (mode === "register") {
         await api("/auth/register", {
           method: "POST",
-          body: JSON.stringify({ email, password, fullName, phone }),
+          body: JSON.stringify({
+            email,
+            password,
+            fullName,
+            phone,
+          }),
         });
+
         Alert.alert("Account created", "You can now sign in.");
         setMode("login");
       } else {
-        const result = await api<{ token: string; user: User }>("/auth/login", {
+        const result = await api<{
+          token: string;
+          user: User;
+        }>("/auth/login", {
           method: "POST",
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({
+            email,
+            password,
+          }),
         });
+
         await saveToken(result.token);
         setUser(result.user);
-        uiEvents.emit("loginSucceeded", { userId: result.user.id });
+
+        uiEvents.emit("loginSucceeded", {
+          userId: result.user.id,
+        });
       }
     } catch (e) {
       Alert.alert(
@@ -253,53 +335,126 @@ export default function App() {
       setBusy(false);
     }
   };
+
+  // Logout
   const logout = async () => {
     try {
-      await api("/auth/logout", { method: "POST" });
-    } catch {}
+      await api("/auth/logout", {
+        method: "POST",
+      });
+    } catch {
+      // Continue local logout even if the server request fails.
+    }
+
     await clearToken();
+
     setUser(null);
     setItems([]);
     setBookings([]);
     setSelected(null);
     setMode("login");
   };
+
+  // Create reservation using calendar-selected dates
   const createBooking = async () => {
-    if (!selected || !startAt || !endAt) {
+    if (!selected) return;
+
+    const start = new Date(arrivalDate);
+    const end = new Date(departureDate);
+
+    if (kind === "DAY_USE") {
+      start.setHours(9, 0, 0, 0);
+      end.setHours(17, 0, 0, 0);
+    } else {
+      start.setHours(14, 0, 0, 0);
+      end.setHours(11, 0, 0, 0);
+    }
+
+    if (end <= start) {
       Alert.alert(
-        "Complete the details",
-        "Enter start and end date/time in ISO format, for example 2026-12-20T09:00:00.000Z.",
+        "Invalid reservation dates",
+        "Departure or check-out must be after arrival or check-in.",
       );
       return;
     }
+
+    const adultCount = Number(adults);
+    const childCount = Number(children);
+
+    if (!Number.isInteger(adultCount) || adultCount < 1) {
+      Alert.alert(
+        "Invalid guest count",
+        "At least one adult is required.",
+      );
+      return;
+    }
+
+    if (!Number.isInteger(childCount) || childCount < 0) {
+      Alert.alert(
+        "Invalid guest count",
+        "Enter a valid number of children.",
+      );
+      return;
+    }
+
+    if (adultCount > selected.capacity_adults) {
+      Alert.alert(
+        "Adult capacity exceeded",
+        `This accommodation allows up to ${selected.capacity_adults} adults.`,
+      );
+      return;
+    }
+
+    if (childCount > selected.capacity_children) {
+      Alert.alert(
+        "Children capacity exceeded",
+        `This accommodation allows up to ${selected.capacity_children} children.`,
+      );
+      return;
+    }
+
     setBusy(true);
+
     try {
       const result = await api<{ data: Booking }>("/bookings", {
         method: "POST",
         body: JSON.stringify({
           accommodationId: selected.id,
           kind,
-          startAt: new Date(startAt).toISOString(),
-          endAt: new Date(endAt).toISOString(),
-          adults: Number(adults),
-          children: Number(children),
+          startAt: start.toISOString(),
+          endAt: end.toISOString(),
+          adults: adultCount,
+          children: childCount,
           specialRequest: special,
         }),
       });
-      uiEvents.emit("bookingSubmitted", { bookingId: result.data.id });
+
+      uiEvents.emit("bookingSubmitted", {
+        bookingId: result.data.id,
+      });
+
       Alert.alert(
         "Reservation submitted",
         `Reference: ${result.data.reference}\nStatus: Pending admin approval.`,
       );
+
       setSelected(null);
+      setShowArrivalPicker(false);
+      setShowDeparturePicker(false);
       setTab("My Bookings");
+
       await load();
     } catch (e) {
-      Alert.alert("Could not submit booking", (e as Error).message);
+      Alert.alert(
+        "Could not submit booking",
+        (e as Error).message,
+      );
     } finally {
       setBusy(false);
     }
   };
+
+  // Admin booking approval/rejection
   const updateBooking = async (
     id: string,
     status: "CONFIRMED" | "REJECTED",
@@ -307,19 +462,32 @@ export default function App() {
     try {
       await api(`/admin/bookings/${id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+        }),
       });
+
       await load();
     } catch (e) {
-      Alert.alert("Update failed", (e as Error).message);
+      Alert.alert(
+        "Update failed",
+        (e as Error).message,
+      );
     }
   };
+
+  // Customer payment submission
   const submitPayment = async () => {
-    if (!payBooking || !Number(payAmount)) {
-      Alert.alert("Enter payment amount", "Please enter a valid amount.");
+    if (!payBooking || !Number(payAmount) || Number(payAmount) <= 0) {
+      Alert.alert(
+        "Enter payment amount",
+        "Please enter a valid payment amount greater than zero.",
+      );
       return;
     }
+
     setBusy(true);
+
     try {
       await api("/payments", {
         method: "POST",
@@ -330,50 +498,77 @@ export default function App() {
           referenceNumber: payReference || undefined,
         }),
       });
+
       Alert.alert(
         "Payment submitted",
-        "Your payment is pending manual verification by the resort.",
+        "Your GCash payment is pending manual verification by the resort.",
       );
+
       setPayBooking(null);
       setPayAmount("");
       setPayReference("");
+
       await load();
     } catch (e) {
-      Alert.alert("Payment not submitted", (e as Error).message);
+      Alert.alert(
+        "Payment not submitted",
+        (e as Error).message,
+      );
     } finally {
       setBusy(false);
     }
   };
-  const updatePayment = async (id: string, status: "VERIFIED" | "REJECTED") => {
+
+  // Admin payment verification
+  const updatePayment = async (
+    id: string,
+    status: "VERIFIED" | "REJECTED",
+  ) => {
     try {
       await api(`/admin/payments/${id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+        }),
       });
+
       await load();
     } catch (e) {
-      Alert.alert("Payment update failed", (e as Error).message);
+      Alert.alert(
+        "Payment update failed",
+        (e as Error).message,
+      );
     }
   };
+
   const title = useMemo(
     () => (user?.role === "ADMIN" ? "Resort Console" : "Tide & Haven"),
     [user],
   );
+
   const filteredItems =
     selectedCategory === "All"
       ? items
       : items.filter((item) => item.category === selectedCategory);
-  if (booting)
+
+  // Loading screen
+  if (booting) {
     return (
       <SafeAreaView style={s.center}>
         <ActivityIndicator size="large" color={C.ocean} />
-        <Text style={s.subheading}>Preparing your resort experience…</Text>
+        <Text style={s.subheading}>
+          Preparing your resort experience…
+        </Text>
       </SafeAreaView>
     );
-  if (!user)
+  }
+
+  // Authentication screen
+  if (!user) {
     return (
       <SafeAreaView style={s.safe}>
         <ExpoStatusBar style="dark" />
+
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{ flex: 1 }}
@@ -385,17 +580,25 @@ export default function App() {
             <View style={s.brandMark}>
               <Text style={{ fontSize: 28 }}>🌴</Text>
             </View>
+
             <Text style={s.brand}>TIDE & HAVEN</Text>
-            <Text style={s.brandSub}>A little closer to paradise.</Text>
+            <Text style={s.brandSub}>
+              A little closer to paradise.
+            </Text>
+
             <View style={s.authCard}>
               <Text style={s.heading}>
-                {mode === "login" ? "Welcome back" : "Create your account"}
+                {mode === "login"
+                  ? "Welcome back"
+                  : "Create your account"}
               </Text>
+
               <Text style={s.subheading}>
                 {mode === "login"
                   ? "Sign in to plan your next escape."
                   : "Join us and discover your resort stay."}
               </Text>
+
               {mode === "register" && (
                 <>
                   <Field
@@ -404,6 +607,7 @@ export default function App() {
                     onChangeText={setFullName}
                     placeholder="Your full name"
                   />
+
                   <Field
                     label="Phone number"
                     value={phone}
@@ -413,6 +617,7 @@ export default function App() {
                   />
                 </>
               )}
+
               <Field
                 label="Email address"
                 value={email}
@@ -420,6 +625,7 @@ export default function App() {
                 placeholder="you@example.com"
                 keyboardType="email-address"
               />
+
               <Field
                 label="Password"
                 value={password}
@@ -427,6 +633,7 @@ export default function App() {
                 placeholder="At least 8 characters"
                 secureTextEntry
               />
+
               <Button
                 title={
                   busy
@@ -438,8 +645,11 @@ export default function App() {
                 onPress={auth}
                 disabled={busy}
               />
+
               <Pressable
-                onPress={() => setMode(mode === "login" ? "register" : "login")}
+                onPress={() =>
+                  setMode(mode === "login" ? "register" : "login")
+                }
                 style={{ padding: 14 }}
               >
                 <Text style={s.link}>
@@ -449,6 +659,7 @@ export default function App() {
                 </Text>
               </Pressable>
             </View>
+
             <Text style={s.footnote}>
               Secure reservations • Thoughtful stays • Tropical memories
             </Text>
@@ -456,21 +667,26 @@ export default function App() {
         </KeyboardAvoidingView>
       </SafeAreaView>
     );
+  }
 
+  // Main application
   return (
     <SafeAreaView style={s.safe}>
       <ExpoStatusBar style="dark" />
+
       <View style={s.topbar}>
         <View>
           <Text style={s.topBrand}>{title}</Text>
           <Text style={s.topCaption}>{user.fullName}</Text>
         </View>
+
         <Pressable onPress={logout} style={s.avatar}>
           <Text style={{ color: C.ocean, fontWeight: "800" }}>
             {user.fullName.slice(0, 1).toUpperCase()}
           </Text>
         </Pressable>
       </View>
+
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={s.content}
@@ -482,14 +698,22 @@ export default function App() {
           />
         }
       >
+        {/* CUSTOMER HOME */}
         {user.role === "CUSTOMER" && tab === "Home" && (
           <>
             <View style={s.hero}>
-              <Text style={s.heroEyebrow}>YOUR TROPICAL ESCAPE</Text>
-              <Text style={s.heroTitle}>Find your{"\n"}moment by the sea.</Text>
+              <Text style={s.heroEyebrow}>
+                YOUR TROPICAL ESCAPE
+              </Text>
+
+              <Text style={s.heroTitle}>
+                Find your{"\n"}moment by the sea.
+              </Text>
+
               <Text style={s.heroText}>
                 Slow mornings, sunny afternoons, and stays worth remembering.
               </Text>
+
               <Pressable
                 style={s.heroPill}
                 onPress={() => {
@@ -497,13 +721,17 @@ export default function App() {
                   setTab("Explore");
                 }}
               >
-                <Text style={s.heroPillText}>Explore the resort →</Text>
+                <Text style={s.heroPillText}>
+                  Explore the resort →
+                </Text>
               </Pressable>
             </View>
+
             <Header
               title="A stay for every kind of day"
               subtitle="Thoughtfully selected spaces and experiences."
             />
+
             <View style={s.quickGrid}>
               {[
                 "Cottages",
@@ -522,17 +750,22 @@ export default function App() {
                   <Text style={{ fontSize: 22 }}>
                     {["🏡", "🛏️", "☀️", "🌙"][i]}
                   </Text>
+
                   <Text style={s.quickText}>{x}</Text>
                 </Pressable>
               ))}
             </View>
+
             <Header title="Guest favorites" />
+
             <AccommodationList
               items={items.slice(0, 3)}
               onSelect={setSelected}
             />
           </>
         )}
+
+        {/* CUSTOMER EXPLORE */}
         {user.role === "CUSTOMER" && tab === "Explore" && (
           <>
             <Header
@@ -551,7 +784,9 @@ export default function App() {
                   onPress={() => setSelectedCategory(category)}
                   style={{
                     backgroundColor:
-                      selectedCategory === category ? C.ocean : C.white,
+                      selectedCategory === category
+                        ? C.ocean
+                        : C.white,
                     paddingHorizontal: 16,
                     paddingVertical: 11,
                     borderRadius: 25,
@@ -560,7 +795,10 @@ export default function App() {
                 >
                   <Text
                     style={{
-                      color: selectedCategory === category ? C.white : C.navy,
+                      color:
+                        selectedCategory === category
+                          ? C.white
+                          : C.navy,
                       fontWeight: "800",
                       fontSize: 12,
                     }}
@@ -575,15 +813,21 @@ export default function App() {
               {filteredItems.length} listings available
             </Text>
 
-            <AccommodationList items={filteredItems} onSelect={setSelected} />
+            <AccommodationList
+              items={filteredItems}
+              onSelect={setSelected}
+            />
           </>
         )}
+
+        {/* CUSTOMER BOOKINGS */}
         {user.role === "CUSTOMER" && tab === "My Bookings" && (
           <>
             <Header
               title="My bookings"
               subtitle="Your reservations, all in one place."
             />
+
             {bookings.length === 0 ? (
               <Empty text="No bookings yet. Your next escape is waiting." />
             ) : (
@@ -593,37 +837,48 @@ export default function App() {
                     <Text style={s.cardTitle}>
                       {b.accommodation_name ?? b.reference}
                     </Text>
+
                     <StatusPill status={b.status} />
                   </View>
+
                   <Text style={s.meta}>
                     {b.reference} • {b.kind.replace("_", " ")}
                   </Text>
+
                   <Text style={s.meta}>
                     {new Date(b.start_at).toLocaleString()} –{" "}
                     {new Date(b.end_at).toLocaleString()}
                   </Text>
+
                   <Text style={s.price}>{money(b.total)}</Text>
                 </View>
               ))
             )}
           </>
         )}
+
+        {/* CUSTOMER PAYMENTS */}
         {user.role === "CUSTOMER" && tab === "Payments" && (
           <>
             <Header
               title="Payments"
               subtitle="Submit payment details for manual verification."
             />
+
             {bookings
-              .filter((b) => ["PENDING", "CONFIRMED"].includes(b.status))
+              .filter((b) =>
+                ["PENDING", "CONFIRMED"].includes(b.status),
+              )
               .map((b) => (
                 <View key={b.id} style={s.bookingCard}>
                   <Text style={s.cardTitle}>
                     {b.accommodation_name ?? b.reference}
                   </Text>
+
                   <Text style={s.meta}>
-                    {b.reference} • Balance starts at {money(b.total)}
+                    {b.reference} • Total {money(b.total)}
                   </Text>
+
                   <Button
                     title="Submit payment"
                     onPress={() => {
@@ -633,16 +888,22 @@ export default function App() {
                   />
                 </View>
               ))}
+
             <Header title="Payment history" />
+
             {payments.length === 0 ? (
               <Empty text="No payment submissions yet." />
             ) : (
               payments.map((p) => (
                 <View key={p.id} style={s.bookingCard}>
                   <View style={s.rowBetween}>
-                    <Text style={s.cardTitle}>{money(p.amount)}</Text>
+                    <Text style={s.cardTitle}>
+                      {money(p.amount)}
+                    </Text>
+
                     <StatusPill status={p.status} />
                   </View>
+
                   <Text style={s.meta}>
                     {p.method.replace("_", " ")} •{" "}
                     {p.reference_number ?? "No reference supplied"}
@@ -652,29 +913,43 @@ export default function App() {
             )}
           </>
         )}
+
+        {/* CUSTOMER PROFILE */}
         {user.role === "CUSTOMER" && tab === "Profile" && (
           <>
             <Header title="Your profile" />
+
             <View style={s.bookingCard}>
               <Text style={s.cardTitle}>{user.fullName}</Text>
               <Text style={s.meta}>{user.email}</Text>
               <Text style={s.meta}>Customer account</Text>
-              <Button title="Sign out" onPress={logout} secondary />
+
+              <Button
+                title="Sign out"
+                onPress={logout}
+                secondary
+              />
             </View>
           </>
         )}
+
+        {/* ADMIN HOME */}
         {user.role === "ADMIN" && tab === "Home" && (
           <>
             <Header
               title="Good day, Admin"
               subtitle="Here’s what’s happening at your resort."
             />
+
             <View style={s.stats}>
               {[
                 ["Total bookings", dashboard.totalBookings ?? 0],
                 ["Pending", dashboard.pendingBookings ?? 0],
                 ["Customers", dashboard.customers ?? 0],
-                ["Verified revenue", money(dashboard.verifiedRevenue ?? 0)],
+                [
+                  "Verified revenue",
+                  money(dashboard.verifiedRevenue ?? 0),
+                ],
               ].map(([k, v]) => (
                 <View key={String(k)} style={s.stat}>
                   <Text style={s.statValue}>{v}</Text>
@@ -682,49 +957,66 @@ export default function App() {
                 </View>
               ))}
             </View>
+
             <Header title="Recent reservations" />
+
             <AdminBookings
               bookings={bookings.slice(0, 5)}
               onUpdate={updateBooking}
             />
           </>
         )}
+
+        {/* ADMIN PAYMENTS */}
         {user.role === "ADMIN" && tab === "Payments" && (
           <>
             <Header
               title="Payment verification"
               subtitle="Review customer submissions. Uploading a reference does not mean a payment is verified."
             />
+
             {payments.length === 0 ? (
               <Empty text="No payment submissions yet." />
             ) : (
               payments.map((p) => (
                 <View key={p.id} style={s.bookingCard}>
                   <View style={s.rowBetween}>
-                    <Text style={s.cardTitle}>{money(p.amount)}</Text>
+                    <Text style={s.cardTitle}>
+                      {money(p.amount)}
+                    </Text>
+
                     <StatusPill status={p.status} />
                   </View>
+
                   <Text style={s.meta}>
                     {p.customer_name ?? "Customer"} •{" "}
                     {p.booking_reference ?? p.booking_id}
                   </Text>
+
                   <Text style={s.meta}>
                     {p.method} • {p.reference_number ?? "No reference"}
                   </Text>
+
                   {p.status === "SUBMITTED" && (
                     <View style={s.row}>
                       <View style={{ flex: 1 }}>
                         <Button
                           title="Verify"
-                          onPress={() => updatePayment(p.id, "VERIFIED")}
+                          onPress={() =>
+                            updatePayment(p.id, "VERIFIED")
+                          }
                         />
                       </View>
+
                       <View style={{ width: 10 }} />
+
                       <View style={{ flex: 1 }}>
                         <Button
                           title="Reject"
                           secondary
-                          onPress={() => updatePayment(p.id, "REJECTED")}
+                          onPress={() =>
+                            updatePayment(p.id, "REJECTED")
+                          }
                         />
                       </View>
                     </View>
@@ -734,21 +1026,30 @@ export default function App() {
             )}
           </>
         )}
+
+        {/* ADMIN RESERVATIONS */}
         {user.role === "ADMIN" && tab === "Reservations" && (
           <>
             <Header
               title="Reservation management"
               subtitle="Review requests and update their status."
             />
-            <AdminBookings bookings={bookings} onUpdate={updateBooking} />
+
+            <AdminBookings
+              bookings={bookings}
+              onUpdate={updateBooking}
+            />
           </>
         )}
+
+        {/* ADMIN INVENTORY */}
         {user.role === "ADMIN" && tab === "Inventory" && (
           <>
             <Header
               title="Accommodation inventory"
               subtitle="Active listings customers can reserve."
             />
+
             <AccommodationList
               items={items}
               onSelect={() =>
@@ -761,30 +1062,46 @@ export default function App() {
           </>
         )}
       </ScrollView>
+
+      {/* BOTTOM NAVIGATION */}
       <View style={s.nav}>
-        {(user.role === "ADMIN"
-          ? ["Home", "Reservations", "Payments", "Inventory"]
-          : ["Home", "Explore", "My Bookings", "Payments", "Profile"]
+        {(
+          user.role === "ADMIN"
+            ? ["Home", "Reservations", "Payments", "Inventory"]
+            : ["Home", "Explore", "My Bookings", "Payments", "Profile"]
         ).map((x, i) => (
           <Pressable
             key={x}
             onPress={() => {
               setTab(x);
-              uiEvents.emit("screenChanged", { screen: x });
+              uiEvents.emit("screenChanged", {
+                screen: x,
+              });
             }}
             style={s.navItem}
           >
-            <Text style={[s.navIcon, tab === x && { color: C.ocean }]}>
+            <Text
+              style={[
+                s.navIcon,
+                tab === x && { color: C.ocean },
+              ]}
+            >
               {
-                (user.role === "ADMIN"
-                  ? ["▦", "▤", "₱", "⌂"]
-                  : ["⌂", "◈", "▣", "₱", "○"])[i]
+                (
+                  user.role === "ADMIN"
+                    ? ["▦", "▤", "₱", "⌂"]
+                    : ["⌂", "◈", "▣", "₱", "○"]
+                )[i]
               }
             </Text>
+
             <Text
               style={[
                 s.navText,
-                tab === x && { color: C.ocean, fontWeight: "800" },
+                tab === x && {
+                  color: C.ocean,
+                  fontWeight: "800",
+                },
               ]}
             >
               {x}
@@ -792,59 +1109,138 @@ export default function App() {
           </Pressable>
         ))}
       </View>
+
+      {/* RESERVATION MODAL */}
       {selected && (
         <View style={s.modalShade}>
-          <ScrollView style={s.modal} contentContainerStyle={{ padding: 20 }}>
-            <Pressable onPress={() => setSelected(null)}>
+          <ScrollView
+            style={s.modal}
+            contentContainerStyle={{ padding: 20 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Pressable
+              onPress={() => {
+                setSelected(null);
+                setShowArrivalPicker(false);
+                setShowDeparturePicker(false);
+              }}
+            >
               <Text style={s.close}>✕ Close</Text>
             </Pressable>
+
             <Text style={s.heading}>{selected.name}</Text>
             <Text style={s.subheading}>{selected.description}</Text>
+
             <Text style={s.meta}>
               Capacity: {selected.capacity_adults} adults •{" "}
               {selected.capacity_children} children
             </Text>
+
             <View style={s.toggleRow}>
               {(["DAY_USE", "OVERNIGHT"] as const).map((k) => (
                 <Pressable
                   key={k}
                   onPress={() => setKind(k)}
-                  style={[s.toggle, kind === k && s.toggleActive]}
+                  style={[
+                    s.toggle,
+                    kind === k && s.toggleActive,
+                  ]}
                 >
                   <Text
-                    style={[s.toggleText, kind === k && { color: C.white }]}
+                    style={[
+                      s.toggleText,
+                      kind === k && { color: C.white },
+                    ]}
                   >
                     {k === "DAY_USE" ? "Day use" : "Overnight"}
                   </Text>
                 </Pressable>
               ))}
             </View>
+
             <Text style={s.price}>
               {money(
-                kind === "DAY_USE" ? selected.day_price : selected.night_price,
+                kind === "DAY_USE"
+                  ? selected.day_price
+                  : selected.night_price,
               )}{" "}
               {kind === "OVERNIGHT" ? "/ night" : "/ package"}
             </Text>
-            <Field
-              label={
-                kind === "DAY_USE"
-                  ? "Arrival date & time (ISO)"
-                  : "Check-in (ISO)"
-              }
-              value={startAt}
-              onChangeText={setStartAt}
-              placeholder="2026-12-20T09:00:00.000Z"
-            />
-            <Field
-              label={
-                kind === "DAY_USE"
-                  ? "Departure date & time (ISO)"
-                  : "Check-out (ISO)"
-              }
-              value={endAt}
-              onChangeText={setEndAt}
-              placeholder="2026-12-20T17:00:00.000Z"
-            />
+
+            {/* ARRIVAL / CHECK-IN DATE */}
+            <Text style={s.label}>
+              {kind === "DAY_USE"
+                ? "Arrival date"
+                : "Check-in date"}
+            </Text>
+
+            <Pressable
+              style={s.input}
+              onPress={() => {
+                setShowDeparturePicker(false);
+                setShowArrivalPicker(true);
+              }}
+            >
+              <Text style={{ color: C.navy }}>
+                📅 {formatDate(arrivalDate)}
+              </Text>
+            </Pressable>
+
+            {showArrivalPicker && (
+              <DateTimePicker
+                value={arrivalDate}
+                mode="date"
+                display="calendar"
+                minimumDate={new Date()}
+                onChange={(event, date) => {
+                  setShowArrivalPicker(false);
+
+                  if (event.type === "set" && date) {
+                    setArrivalDate(date);
+
+                    if (date > departureDate) {
+                      setDepartureDate(date);
+                    }
+                  }
+                }}
+              />
+            )}
+
+            {/* DEPARTURE / CHECK-OUT DATE */}
+            <Text style={[s.label, { marginTop: 12 }]}>
+              {kind === "DAY_USE"
+                ? "Departure date"
+                : "Check-out date"}
+            </Text>
+
+            <Pressable
+              style={s.input}
+              onPress={() => {
+                setShowArrivalPicker(false);
+                setShowDeparturePicker(true);
+              }}
+            >
+              <Text style={{ color: C.navy }}>
+                📅 {formatDate(departureDate)}
+              </Text>
+            </Pressable>
+
+            {showDeparturePicker && (
+              <DateTimePicker
+                value={departureDate}
+                mode="date"
+                display="calendar"
+                minimumDate={arrivalDate}
+                onChange={(event, date) => {
+                  setShowDeparturePicker(false);
+
+                  if (event.type === "set" && date) {
+                    setDepartureDate(date);
+                  }
+                }}
+              />
+            )}
+
             <Field
               label="Adults"
               value={adults}
@@ -852,6 +1248,7 @@ export default function App() {
               placeholder="2"
               keyboardType="phone-pad"
             />
+
             <Field
               label="Children"
               value={children}
@@ -859,51 +1256,59 @@ export default function App() {
               placeholder="0"
               keyboardType="phone-pad"
             />
+
             <Field
               label="Special request"
               value={special}
               onChangeText={setSpecial}
               placeholder="Optional request"
             />
+
             <Button
-              title={busy ? "Submitting…" : "Submit reservation request"}
+              title={
+                busy
+                  ? "Submitting…"
+                  : "Submit reservation request"
+              }
               onPress={createBooking}
               disabled={busy}
             />
           </ScrollView>
         </View>
       )}
+
+      {/* PAYMENT MODAL */}
       {payBooking && (
         <View style={s.modalShade}>
-          <ScrollView style={s.modal} contentContainerStyle={{ padding: 20 }}>
+          <ScrollView
+            style={s.modal}
+            contentContainerStyle={{ padding: 20 }}
+            keyboardShouldPersistTaps="handled"
+          >
             <Pressable onPress={() => setPayBooking(null)}>
               <Text style={s.close}>✕ Close</Text>
             </Pressable>
+
             <Text style={s.heading}>Submit payment</Text>
+
             <Text style={s.subheading}>
               {payBooking.reference} • Total {money(payBooking.total)}
             </Text>
+
             <Text style={s.label}>Payment method</Text>
-            <View style={s.toggleRow}>
-              {(["GCASH", "BANK_TRANSFER", "CASH_ON_ARRIVAL"] as const).map(
-                (m) => (
-                  <Pressable
-                    key={m}
-                    onPress={() => setPayMethod(m)}
-                    style={[s.toggle, payMethod === m && s.toggleActive]}
-                  >
-                    <Text
-                      style={[
-                        s.toggleText,
-                        payMethod === m && { color: C.white },
-                      ]}
-                    >
-                      {m.replace("_", " ")}
-                    </Text>
-                  </Pressable>
-                ),
-              )}
+
+            <View
+              style={[
+                s.toggle,
+                s.toggleActive,
+                { marginBottom: 14 },
+              ]}
+            >
+              <Text style={[s.toggleText, { color: C.white }]}>
+                GCASH
+              </Text>
             </View>
+
             <Field
               label="Amount (PHP)"
               value={payAmount}
@@ -911,18 +1316,25 @@ export default function App() {
               placeholder="0.00"
               keyboardType="phone-pad"
             />
+
             <Field
               label="Reference number (optional)"
               value={payReference}
               onChangeText={setPayReference}
               placeholder="Transaction reference"
             />
+
             <Text style={s.meta}>
               Payment is reviewed manually by the resort. Do not submit
               sensitive bank credentials or PINs.
             </Text>
+
             <Button
-              title={busy ? "Submitting…" : "Submit for verification"}
+              title={
+                busy
+                  ? "Submitting…"
+                  : "Submit for verification"
+              }
               onPress={submitPayment}
               disabled={busy}
             />
@@ -932,6 +1344,8 @@ export default function App() {
     </SafeAreaView>
   );
 }
+
+// ACCOMMODATION LIST
 function AccommodationList({
   items,
   onSelect,
@@ -939,8 +1353,12 @@ function AccommodationList({
   items: Accommodation[];
   onSelect: (item: Accommodation) => void;
 }) {
-  if (!items.length)
-    return <Empty text="No accommodations are available right now." />;
+  if (!items.length) {
+    return (
+      <Empty text="No accommodations are available right now." />
+    );
+  }
+
   return (
     <View>
       {items.map((item) => (
@@ -950,12 +1368,21 @@ function AccommodationList({
           style={s.listCard}
         >
           {!!item.image_url && (
-            <Image source={{ uri: item.image_url }} style={s.cardImage} />
+            <Image
+              source={{ uri: item.image_url }}
+              style={s.cardImage}
+            />
           )}
+
           <View style={{ padding: 14 }}>
-            <Text style={s.category}>{item.category.toUpperCase()}</Text>
+            <Text style={s.category}>
+              {item.category.toUpperCase()}
+            </Text>
+
             <Text style={s.cardTitle}>{item.name}</Text>
+
             <Text style={s.meta}>{item.description}</Text>
+
             <View style={s.rowBetween}>
               <Text style={s.price}>
                 {item.day_price
@@ -965,6 +1392,7 @@ function AccommodationList({
                   {item.day_price ? "/ day-use" : "/ night"}
                 </Text>
               </Text>
+
               <Text style={s.link}>View details →</Text>
             </View>
           </View>
@@ -973,14 +1401,22 @@ function AccommodationList({
     </View>
   );
 }
+
+// ADMIN BOOKINGS
 function AdminBookings({
   bookings,
   onUpdate,
 }: {
   bookings: Booking[];
-  onUpdate: (id: string, status: "CONFIRMED" | "REJECTED") => void;
+  onUpdate: (
+    id: string,
+    status: "CONFIRMED" | "REJECTED",
+  ) => void;
 }) {
-  if (!bookings.length) return <Empty text="No reservations to review." />;
+  if (!bookings.length) {
+    return <Empty text="No reservations to review." />;
+  }
+
   return (
     <View>
       {bookings.map((b) => (
@@ -989,13 +1425,20 @@ function AdminBookings({
             <Text style={s.cardTitle}>
               {b.accommodation_name ?? b.reference}
             </Text>
+
             <StatusPill status={b.status} />
           </View>
+
           <Text style={s.meta}>
             {b.reference} • {b.kind.replace("_", " ")}
           </Text>
-          <Text style={s.meta}>{new Date(b.start_at).toLocaleString()}</Text>
+
+          <Text style={s.meta}>
+            {new Date(b.start_at).toLocaleString()}
+          </Text>
+
           <Text style={s.price}>{money(b.total)}</Text>
+
           {b.status === "PENDING" && (
             <View style={s.row}>
               <View style={{ flex: 1 }}>
@@ -1004,7 +1447,9 @@ function AdminBookings({
                   onPress={() => onUpdate(b.id, "CONFIRMED")}
                 />
               </View>
+
               <View style={{ width: 10 }} />
+
               <View style={{ flex: 1 }}>
                 <Button
                   title="Reject"
@@ -1019,6 +1464,8 @@ function AdminBookings({
     </View>
   );
 }
+
+// STATUS BADGE
 function StatusPill({ status }: { status: string }) {
   const color =
     status === "CONFIRMED" || status === "COMPLETED"
@@ -1026,12 +1473,28 @@ function StatusPill({ status }: { status: string }) {
       : status === "REJECTED" || status === "CANCELLED"
         ? C.red
         : C.orange;
+
   return (
-    <View style={[s.pill, { backgroundColor: `${color}18` }]}>
-      <Text style={{ color, fontWeight: "800", fontSize: 10 }}>{status}</Text>
+    <View
+      style={[
+        s.pill,
+        { backgroundColor: `${color}18` },
+      ]}
+    >
+      <Text
+        style={{
+          color,
+          fontWeight: "800",
+          fontSize: 10,
+        }}
+      >
+        {status}
+      </Text>
     </View>
   );
 }
+
+// EMPTY STATE
 function Empty({ text }: { text: string }) {
   return (
     <View style={s.empty}>
@@ -1041,8 +1504,13 @@ function Empty({ text }: { text: string }) {
   );
 }
 
+// STYLES
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.sand },
+  safe: {
+    flex: 1,
+    backgroundColor: C.sand,
+  },
+
   center: {
     flex: 1,
     alignItems: "center",
@@ -1050,7 +1518,13 @@ const s = StyleSheet.create({
     backgroundColor: C.sand,
     gap: 12,
   },
-  authWrap: { flexGrow: 1, justifyContent: "center", padding: 24 },
+
+  authWrap: {
+    flexGrow: 1,
+    justifyContent: "center",
+    padding: 24,
+  },
+
   brandMark: {
     width: 62,
     height: 62,
@@ -1061,6 +1535,7 @@ const s = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 12,
   },
+
   brand: {
     fontSize: 21,
     fontWeight: "900",
@@ -1068,24 +1543,28 @@ const s = StyleSheet.create({
     color: C.navy,
     textAlign: "center",
   },
+
   brandSub: {
     color: C.muted,
     textAlign: "center",
     marginTop: 5,
     marginBottom: 24,
   },
+
   authCard: {
     backgroundColor: C.white,
     borderRadius: 26,
     padding: 22,
     elevation: 3,
   },
+
   heading: {
     fontSize: 24,
     fontWeight: "900",
     color: C.navy,
     letterSpacing: -0.5,
   },
+
   subheading: {
     fontSize: 13,
     color: C.muted,
@@ -1093,7 +1572,14 @@ const s = StyleSheet.create({
     marginTop: 5,
     marginBottom: 18,
   },
-  label: { fontSize: 12, fontWeight: "800", color: C.navy, marginBottom: 7 },
+
+  label: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: C.navy,
+    marginBottom: 7,
+  },
+
   input: {
     backgroundColor: "#F7FAF8",
     borderWidth: 1,
@@ -1104,6 +1590,7 @@ const s = StyleSheet.create({
     color: C.navy,
     fontSize: 14,
   },
+
   button: {
     backgroundColor: C.ocean,
     borderRadius: 14,
@@ -1111,19 +1598,32 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   buttonSecondary: {
     backgroundColor: "#E7F3F0",
     borderWidth: 1,
     borderColor: "#C8E2DC",
   },
-  buttonText: { color: C.white, fontWeight: "900", fontSize: 14 },
-  link: { color: C.ocean, fontWeight: "800", fontSize: 13 },
+
+  buttonText: {
+    color: C.white,
+    fontWeight: "900",
+    fontSize: 14,
+  },
+
+  link: {
+    color: C.ocean,
+    fontWeight: "800",
+    fontSize: 13,
+  },
+
   footnote: {
     textAlign: "center",
     color: C.muted,
     fontSize: 11,
     marginTop: 22,
   },
+
   topbar: {
     height: 68,
     paddingHorizontal: 20,
@@ -1132,8 +1632,19 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: C.sand,
   },
-  topBrand: { fontSize: 18, fontWeight: "900", color: C.navy },
-  topCaption: { fontSize: 11, color: C.muted, marginTop: 2 },
+
+  topBrand: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: C.navy,
+  },
+
+  topCaption: {
+    fontSize: 11,
+    color: C.muted,
+    marginTop: 2,
+  },
+
   avatar: {
     width: 38,
     height: 38,
@@ -1142,7 +1653,12 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  content: { padding: 18, paddingBottom: 32 },
+
+  content: {
+    padding: 18,
+    paddingBottom: 32,
+  },
+
   hero: {
     backgroundColor: C.navy,
     borderRadius: 26,
@@ -1150,12 +1666,14 @@ const s = StyleSheet.create({
     marginBottom: 26,
     overflow: "hidden",
   },
+
   heroEyebrow: {
     color: "#8ED8CB",
     fontSize: 10,
     fontWeight: "900",
     letterSpacing: 2,
   },
+
   heroTitle: {
     fontSize: 34,
     lineHeight: 39,
@@ -1163,6 +1681,7 @@ const s = StyleSheet.create({
     color: C.white,
     marginTop: 12,
   },
+
   heroText: {
     color: "#D2E6E1",
     fontSize: 13,
@@ -1170,6 +1689,7 @@ const s = StyleSheet.create({
     marginTop: 10,
     maxWidth: 260,
   },
+
   heroPill: {
     alignSelf: "flex-start",
     backgroundColor: C.orange,
@@ -1178,13 +1698,20 @@ const s = StyleSheet.create({
     paddingVertical: 11,
     marginTop: 18,
   },
-  heroPillText: { color: C.navy, fontWeight: "900", fontSize: 12 },
+
+  heroPillText: {
+    color: C.navy,
+    fontWeight: "900",
+    fontSize: 12,
+  },
+
   quickGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
     marginBottom: 26,
   },
+
   quick: {
     width: "48%",
     backgroundColor: C.white,
@@ -1193,46 +1720,107 @@ const s = StyleSheet.create({
     minHeight: 90,
     justifyContent: "space-between",
   },
-  quickText: { fontSize: 12, color: C.navy, fontWeight: "800", marginTop: 12 },
+
+  quickText: {
+    fontSize: 12,
+    color: C.navy,
+    fontWeight: "800",
+    marginTop: 12,
+  },
+
   listCard: {
     backgroundColor: C.white,
     borderRadius: 20,
     overflow: "hidden",
     marginBottom: 14,
   },
-  cardImage: { height: 150, width: "100%", backgroundColor: "#DDEAE6" },
+
+  cardImage: {
+    height: 150,
+    width: "100%",
+    backgroundColor: "#DDEAE6",
+  },
+
   category: {
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 1.2,
     color: C.teal,
   },
-  cardTitle: { fontSize: 16, fontWeight: "900", color: C.navy, marginTop: 5 },
-  meta: { fontSize: 11, color: C.muted, lineHeight: 17, marginTop: 5 },
-  price: { fontSize: 17, fontWeight: "900", color: C.ocean, marginTop: 10 },
+
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: C.navy,
+    marginTop: 5,
+  },
+
+  meta: {
+    fontSize: 11,
+    color: C.muted,
+    lineHeight: 17,
+    marginTop: 5,
+  },
+
+  price: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: C.ocean,
+    marginTop: 10,
+  },
+
   rowBetween: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 8,
   },
-  row: { flexDirection: "row", alignItems: "center", marginTop: 12 },
+
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 12,
+  },
+
   bookingCard: {
     backgroundColor: C.white,
     borderRadius: 18,
     padding: 16,
     marginBottom: 12,
   },
-  pill: { borderRadius: 30, paddingHorizontal: 10, paddingVertical: 6 },
-  stats: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 24 },
+
+  pill: {
+    borderRadius: 30,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  stats: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 24,
+  },
+
   stat: {
     width: "48%",
     backgroundColor: C.white,
     borderRadius: 18,
     padding: 15,
   },
-  statValue: { fontSize: 23, fontWeight: "900", color: C.ocean },
-  statLabel: { fontSize: 11, color: C.muted, marginTop: 4 },
+
+  statValue: {
+    fontSize: 23,
+    fontWeight: "900",
+    color: C.ocean,
+  },
+
+  statLabel: {
+    fontSize: 11,
+    color: C.muted,
+    marginTop: 4,
+  },
+
   nav: {
     height: 66,
     backgroundColor: C.white,
@@ -1242,9 +1830,24 @@ const s = StyleSheet.create({
     justifyContent: "space-around",
     alignItems: "center",
   },
-  navItem: { alignItems: "center", justifyContent: "center", flex: 1 },
-  navIcon: { fontSize: 19, color: "#8DA3A0" },
-  navText: { fontSize: 9, color: C.muted, marginTop: 3 },
+
+  navItem: {
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+  },
+
+  navIcon: {
+    fontSize: 19,
+    color: "#8DA3A0",
+  },
+
+  navText: {
+    fontSize: 9,
+    color: C.muted,
+    marginTop: 3,
+  },
+
   empty: {
     backgroundColor: C.white,
     borderRadius: 18,
@@ -1252,6 +1855,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+
   modalShade: {
     position: "absolute",
     top: 0,
@@ -1261,13 +1865,20 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(9,31,34,.55)",
     justifyContent: "flex-end",
   },
+
   modal: {
     maxHeight: "92%",
     backgroundColor: C.sand,
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
   },
-  close: { color: C.ocean, fontWeight: "900", marginBottom: 15 },
+
+  close: {
+    color: C.ocean,
+    fontWeight: "900",
+    marginBottom: 15,
+  },
+
   toggleRow: {
     flexDirection: "row",
     backgroundColor: "#E5EEEA",
@@ -1275,7 +1886,21 @@ const s = StyleSheet.create({
     borderRadius: 14,
     marginTop: 14,
   },
-  toggle: { flex: 1, padding: 12, alignItems: "center", borderRadius: 11 },
-  toggleActive: { backgroundColor: C.ocean },
-  toggleText: { fontWeight: "800", fontSize: 12, color: C.navy },
+
+  toggle: {
+    flex: 1,
+    padding: 12,
+    alignItems: "center",
+    borderRadius: 11,
+  },
+
+  toggleActive: {
+    backgroundColor: C.ocean,
+  },
+
+  toggleText: {
+    fontWeight: "800",
+    fontSize: 12,
+    color: C.navy,
+  },
 });
