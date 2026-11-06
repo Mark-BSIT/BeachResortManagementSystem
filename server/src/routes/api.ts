@@ -429,6 +429,75 @@ api.get("/admin/payments", (_req, res) =>
       .all(),
   }),
 );
+
+// Admin verifies or rejects a submitted payment
+api.patch("/admin/payments/:id/status", (req, res) => {
+  const d = z
+    .object({
+      status: z.enum(["VERIFIED", "REJECTED"]),
+    })
+    .parse(req.body);
+
+  const tx = db.transaction(() => {
+    const payment = db
+      .prepare("SELECT * FROM payments WHERE id = ?")
+      .get(req.params.id) as any;
+
+    if (!payment) {
+      throw new Error("Payment not found");
+    }
+
+    if (payment.status !== "SUBMITTED") {
+      throw new Error("This payment has already been reviewed");
+    }
+
+    db.prepare(`
+      UPDATE payments
+      SET status = ?,
+          reviewed_by = ?,
+          reviewed_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(d.status, req.user!.id, payment.id);
+
+    enqueueEvent(
+      d.status === "VERIFIED" ? "paymentVerified" : "paymentRejected",
+      {
+        paymentId: payment.id,
+        bookingId: payment.booking_id,
+        customerId: payment.customer_id,
+      },
+    );
+
+    db.prepare(`
+      INSERT INTO notifications (
+        id, user_id, title, message, type
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      randomUUID(),
+      payment.customer_id,
+      d.status === "VERIFIED"
+        ? "Payment verified"
+        : "Payment rejected",
+      d.status === "VERIFIED"
+        ? "Your payment has been verified by the resort."
+        : "Your payment was rejected. Please contact the resort or submit a valid payment.",
+      "PAYMENT",
+    );
+
+    return {
+      id: payment.id,
+      status: d.status,
+      message:
+        d.status === "VERIFIED"
+          ? "Payment verified successfully"
+          : "Payment rejected successfully",
+    };
+  });
+
+  res.json({ data: tx.immediate() });
+});
+
 // Record cash actually collected by the resort
 api.post("/admin/payments/cash-collection", (req, res) => {
   const schema = z.object({

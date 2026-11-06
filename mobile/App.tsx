@@ -112,9 +112,7 @@ function Field({
         placeholderTextColor="#9AAEAC"
         secureTextEntry={secureTextEntry}
         keyboardType={keyboardType}
-        autoCapitalize={
-          keyboardType === "email-address" ? "none" : "sentences"
-        }
+        autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
         style={s.input}
       />
     </View>
@@ -150,13 +148,7 @@ function Button({
   );
 }
 
-function Header({
-  title,
-  subtitle,
-}: {
-  title: string;
-  subtitle?: string;
-}) {
+function Header({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <View style={{ marginBottom: 18 }}>
       <Text style={s.heading}>{title}</Text>
@@ -382,18 +374,12 @@ export default function App() {
     const childCount = Number(children);
 
     if (!Number.isInteger(adultCount) || adultCount < 1) {
-      Alert.alert(
-        "Invalid guest count",
-        "At least one adult is required.",
-      );
+      Alert.alert("Invalid guest count", "At least one adult is required.");
       return;
     }
 
     if (!Number.isInteger(childCount) || childCount < 0) {
-      Alert.alert(
-        "Invalid guest count",
-        "Enter a valid number of children.",
-      );
+      Alert.alert("Invalid guest count", "Enter a valid number of children.");
       return;
     }
 
@@ -445,10 +431,7 @@ export default function App() {
 
       await load();
     } catch (e) {
-      Alert.alert(
-        "Could not submit booking",
-        (e as Error).message,
-      );
+      Alert.alert("Could not submit booking", (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -469,13 +452,75 @@ export default function App() {
 
       await load();
     } catch (e) {
-      Alert.alert(
-        "Update failed",
-        (e as Error).message,
-      );
+      Alert.alert("Update failed", (e as Error).message);
     }
   };
+  const checkOutBooking = (id: string) => {
+    Alert.alert(
+      "Confirm Check Out",
+      "Are you sure you want to check out this customer? The accommodation will become available again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Check Out",
+          onPress: async () => {
+            setBusy(true);
 
+            try {
+              await api(`/admin/bookings/${id}/check-out`, {
+                method: "POST",
+                body: JSON.stringify({ extraCharge: 0 }),
+              });
+
+              Alert.alert(
+                "Checkout Successful",
+                "The customer has been checked out. The accommodation is now available again.",
+              );
+
+              await load();
+            } catch (error) {
+              Alert.alert("Checkout Failed", (error as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+  // Admin check-in customer
+  const checkInBooking = async (id: string) => {
+    Alert.alert(
+      "Confirm Check In",
+      "Are you sure you want to check in this customer?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Check In",
+          onPress: async () => {
+            setBusy(true);
+
+            try {
+              await api(`/admin/bookings/${id}/check-in`, {
+                method: "POST",
+              });
+
+              Alert.alert(
+                "Check In Successful",
+                "Customer has been checked in successfully.",
+              );
+
+              await load();
+            } catch (error) {
+              Alert.alert("Check In Failed", (error as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  };
   // Customer payment submission
   const submitPayment = async () => {
     if (!payBooking || !Number(payAmount) || Number(payAmount) <= 0) {
@@ -510,20 +555,14 @@ export default function App() {
 
       await load();
     } catch (e) {
-      Alert.alert(
-        "Payment not submitted",
-        (e as Error).message,
-      );
+      Alert.alert("Payment not submitted", (e as Error).message);
     } finally {
       setBusy(false);
     }
   };
 
   // Admin payment verification
-  const updatePayment = async (
-    id: string,
-    status: "VERIFIED" | "REJECTED",
-  ) => {
+  const updatePayment = async (id: string, status: "VERIFIED" | "REJECTED") => {
     try {
       await api(`/admin/payments/${id}/status`, {
         method: "PATCH",
@@ -534,10 +573,7 @@ export default function App() {
 
       await load();
     } catch (e) {
-      Alert.alert(
-        "Payment update failed",
-        (e as Error).message,
-      );
+      Alert.alert("Payment update failed", (e as Error).message);
     }
   };
 
@@ -556,9 +592,7 @@ export default function App() {
     return (
       <SafeAreaView style={s.center}>
         <ActivityIndicator size="large" color={C.ocean} />
-        <Text style={s.subheading}>
-          Preparing your resort experience…
-        </Text>
+        <Text style={s.subheading}>Preparing your resort experience…</Text>
       </SafeAreaView>
     );
   }
@@ -582,15 +616,11 @@ export default function App() {
             </View>
 
             <Text style={s.brand}>TIDE & HAVEN</Text>
-            <Text style={s.brandSub}>
-              A little closer to paradise.
-            </Text>
+            <Text style={s.brandSub}>A little closer to paradise.</Text>
 
             <View style={s.authCard}>
               <Text style={s.heading}>
-                {mode === "login"
-                  ? "Welcome back"
-                  : "Create your account"}
+                {mode === "login" ? "Welcome back" : "Create your account"}
               </Text>
 
               <Text style={s.subheading}>
@@ -647,9 +677,7 @@ export default function App() {
               />
 
               <Pressable
-                onPress={() =>
-                  setMode(mode === "login" ? "register" : "login")
-                }
+                onPress={() => setMode(mode === "login" ? "register" : "login")}
                 style={{ padding: 14 }}
               >
                 <Text style={s.link}>
@@ -702,13 +730,9 @@ export default function App() {
         {user.role === "CUSTOMER" && tab === "Home" && (
           <>
             <View style={s.hero}>
-              <Text style={s.heroEyebrow}>
-                YOUR TROPICAL ESCAPE
-              </Text>
+              <Text style={s.heroEyebrow}>YOUR TROPICAL ESCAPE</Text>
 
-              <Text style={s.heroTitle}>
-                Find your{"\n"}moment by the sea.
-              </Text>
+              <Text style={s.heroTitle}>Find your{"\n"}moment by the sea.</Text>
 
               <Text style={s.heroText}>
                 Slow mornings, sunny afternoons, and stays worth remembering.
@@ -721,9 +745,7 @@ export default function App() {
                   setTab("Explore");
                 }}
               >
-                <Text style={s.heroPillText}>
-                  Explore the resort →
-                </Text>
+                <Text style={s.heroPillText}>Explore the resort →</Text>
               </Pressable>
             </View>
 
@@ -784,9 +806,7 @@ export default function App() {
                   onPress={() => setSelectedCategory(category)}
                   style={{
                     backgroundColor:
-                      selectedCategory === category
-                        ? C.ocean
-                        : C.white,
+                      selectedCategory === category ? C.ocean : C.white,
                     paddingHorizontal: 16,
                     paddingVertical: 11,
                     borderRadius: 25,
@@ -795,10 +815,7 @@ export default function App() {
                 >
                   <Text
                     style={{
-                      color:
-                        selectedCategory === category
-                          ? C.white
-                          : C.navy,
+                      color: selectedCategory === category ? C.white : C.navy,
                       fontWeight: "800",
                       fontSize: 12,
                     }}
@@ -813,10 +830,7 @@ export default function App() {
               {filteredItems.length} listings available
             </Text>
 
-            <AccommodationList
-              items={filteredItems}
-              onSelect={setSelected}
-            />
+            <AccommodationList items={filteredItems} onSelect={setSelected} />
           </>
         )}
 
@@ -866,9 +880,7 @@ export default function App() {
             />
 
             {bookings
-              .filter((b) =>
-                ["PENDING", "CONFIRMED"].includes(b.status),
-              )
+              .filter((b) => ["PENDING", "CONFIRMED"].includes(b.status))
               .map((b) => (
                 <View key={b.id} style={s.bookingCard}>
                   <Text style={s.cardTitle}>
@@ -897,9 +909,7 @@ export default function App() {
               payments.map((p) => (
                 <View key={p.id} style={s.bookingCard}>
                   <View style={s.rowBetween}>
-                    <Text style={s.cardTitle}>
-                      {money(p.amount)}
-                    </Text>
+                    <Text style={s.cardTitle}>{money(p.amount)}</Text>
 
                     <StatusPill status={p.status} />
                   </View>
@@ -924,11 +934,7 @@ export default function App() {
               <Text style={s.meta}>{user.email}</Text>
               <Text style={s.meta}>Customer account</Text>
 
-              <Button
-                title="Sign out"
-                onPress={logout}
-                secondary
-              />
+              <Button title="Sign out" onPress={logout} secondary />
             </View>
           </>
         )}
@@ -946,10 +952,7 @@ export default function App() {
                 ["Total bookings", dashboard.totalBookings ?? 0],
                 ["Pending", dashboard.pendingBookings ?? 0],
                 ["Customers", dashboard.customers ?? 0],
-                [
-                  "Verified revenue",
-                  money(dashboard.verifiedRevenue ?? 0),
-                ],
+                ["Verified revenue", money(dashboard.verifiedRevenue ?? 0)],
               ].map(([k, v]) => (
                 <View key={String(k)} style={s.stat}>
                   <Text style={s.statValue}>{v}</Text>
@@ -963,6 +966,8 @@ export default function App() {
             <AdminBookings
               bookings={bookings.slice(0, 5)}
               onUpdate={updateBooking}
+              onCheckIn={checkInBooking}
+              onCheckOut={checkOutBooking}
             />
           </>
         )}
@@ -981,9 +986,7 @@ export default function App() {
               payments.map((p) => (
                 <View key={p.id} style={s.bookingCard}>
                   <View style={s.rowBetween}>
-                    <Text style={s.cardTitle}>
-                      {money(p.amount)}
-                    </Text>
+                    <Text style={s.cardTitle}>{money(p.amount)}</Text>
 
                     <StatusPill status={p.status} />
                   </View>
@@ -1002,9 +1005,7 @@ export default function App() {
                       <View style={{ flex: 1 }}>
                         <Button
                           title="Verify"
-                          onPress={() =>
-                            updatePayment(p.id, "VERIFIED")
-                          }
+                          onPress={() => updatePayment(p.id, "VERIFIED")}
                         />
                       </View>
 
@@ -1014,9 +1015,7 @@ export default function App() {
                         <Button
                           title="Reject"
                           secondary
-                          onPress={() =>
-                            updatePayment(p.id, "REJECTED")
-                          }
+                          onPress={() => updatePayment(p.id, "REJECTED")}
                         />
                       </View>
                     </View>
@@ -1034,10 +1033,11 @@ export default function App() {
               title="Reservation management"
               subtitle="Review requests and update their status."
             />
-
             <AdminBookings
               bookings={bookings}
               onUpdate={updateBooking}
+              onCheckIn={checkInBooking}
+              onCheckOut={checkOutBooking}
             />
           </>
         )}
@@ -1065,10 +1065,9 @@ export default function App() {
 
       {/* BOTTOM NAVIGATION */}
       <View style={s.nav}>
-        {(
-          user.role === "ADMIN"
-            ? ["Home", "Reservations", "Payments", "Inventory"]
-            : ["Home", "Explore", "My Bookings", "Payments", "Profile"]
+        {(user.role === "ADMIN"
+          ? ["Home", "Reservations", "Payments", "Inventory"]
+          : ["Home", "Explore", "My Bookings", "Payments", "Profile"]
         ).map((x, i) => (
           <Pressable
             key={x}
@@ -1080,18 +1079,11 @@ export default function App() {
             }}
             style={s.navItem}
           >
-            <Text
-              style={[
-                s.navIcon,
-                tab === x && { color: C.ocean },
-              ]}
-            >
+            <Text style={[s.navIcon, tab === x && { color: C.ocean }]}>
               {
-                (
-                  user.role === "ADMIN"
-                    ? ["▦", "▤", "₱", "⌂"]
-                    : ["⌂", "◈", "▣", "₱", "○"]
-                )[i]
+                (user.role === "ADMIN"
+                  ? ["▦", "▤", "₱", "⌂"]
+                  : ["⌂", "◈", "▣", "₱", "○"])[i]
               }
             </Text>
 
@@ -1141,16 +1133,10 @@ export default function App() {
                 <Pressable
                   key={k}
                   onPress={() => setKind(k)}
-                  style={[
-                    s.toggle,
-                    kind === k && s.toggleActive,
-                  ]}
+                  style={[s.toggle, kind === k && s.toggleActive]}
                 >
                   <Text
-                    style={[
-                      s.toggleText,
-                      kind === k && { color: C.white },
-                    ]}
+                    style={[s.toggleText, kind === k && { color: C.white }]}
                   >
                     {k === "DAY_USE" ? "Day use" : "Overnight"}
                   </Text>
@@ -1160,18 +1146,14 @@ export default function App() {
 
             <Text style={s.price}>
               {money(
-                kind === "DAY_USE"
-                  ? selected.day_price
-                  : selected.night_price,
+                kind === "DAY_USE" ? selected.day_price : selected.night_price,
               )}{" "}
               {kind === "OVERNIGHT" ? "/ night" : "/ package"}
             </Text>
 
             {/* ARRIVAL / CHECK-IN DATE */}
             <Text style={s.label}>
-              {kind === "DAY_USE"
-                ? "Arrival date"
-                : "Check-in date"}
+              {kind === "DAY_USE" ? "Arrival date" : "Check-in date"}
             </Text>
 
             <Pressable
@@ -1208,9 +1190,7 @@ export default function App() {
 
             {/* DEPARTURE / CHECK-OUT DATE */}
             <Text style={[s.label, { marginTop: 12 }]}>
-              {kind === "DAY_USE"
-                ? "Departure date"
-                : "Check-out date"}
+              {kind === "DAY_USE" ? "Departure date" : "Check-out date"}
             </Text>
 
             <Pressable
@@ -1265,11 +1245,7 @@ export default function App() {
             />
 
             <Button
-              title={
-                busy
-                  ? "Submitting…"
-                  : "Submit reservation request"
-              }
+              title={busy ? "Submitting…" : "Submit reservation request"}
               onPress={createBooking}
               disabled={busy}
             />
@@ -1297,16 +1273,8 @@ export default function App() {
 
             <Text style={s.label}>Payment method</Text>
 
-            <View
-              style={[
-                s.toggle,
-                s.toggleActive,
-                { marginBottom: 14 },
-              ]}
-            >
-              <Text style={[s.toggleText, { color: C.white }]}>
-                GCASH
-              </Text>
+            <View style={[s.toggle, s.toggleActive, { marginBottom: 14 }]}>
+              <Text style={[s.toggleText, { color: C.white }]}>GCASH</Text>
             </View>
 
             <Field
@@ -1330,11 +1298,7 @@ export default function App() {
             </Text>
 
             <Button
-              title={
-                busy
-                  ? "Submitting…"
-                  : "Submit for verification"
-              }
+              title={busy ? "Submitting…" : "Submit for verification"}
               onPress={submitPayment}
               disabled={busy}
             />
@@ -1354,9 +1318,7 @@ function AccommodationList({
   onSelect: (item: Accommodation) => void;
 }) {
   if (!items.length) {
-    return (
-      <Empty text="No accommodations are available right now." />
-    );
+    return <Empty text="No accommodations are available right now." />;
   }
 
   return (
@@ -1368,16 +1330,11 @@ function AccommodationList({
           style={s.listCard}
         >
           {!!item.image_url && (
-            <Image
-              source={{ uri: item.image_url }}
-              style={s.cardImage}
-            />
+            <Image source={{ uri: item.image_url }} style={s.cardImage} />
           )}
 
           <View style={{ padding: 14 }}>
-            <Text style={s.category}>
-              {item.category.toUpperCase()}
-            </Text>
+            <Text style={s.category}>{item.category.toUpperCase()}</Text>
 
             <Text style={s.cardTitle}>{item.name}</Text>
 
@@ -1406,12 +1363,13 @@ function AccommodationList({
 function AdminBookings({
   bookings,
   onUpdate,
+  onCheckIn,
+  onCheckOut,
 }: {
   bookings: Booking[];
-  onUpdate: (
-    id: string,
-    status: "CONFIRMED" | "REJECTED",
-  ) => void;
+  onUpdate: (id: string, status: "CONFIRMED" | "REJECTED") => void;
+  onCheckIn: (id: string) => void;
+  onCheckOut: (id: string) => void;
 }) {
   if (!bookings.length) {
     return <Empty text="No reservations to review." />;
@@ -1434,7 +1392,8 @@ function AdminBookings({
           </Text>
 
           <Text style={s.meta}>
-            {new Date(b.start_at).toLocaleString()}
+            {new Date(b.start_at).toLocaleString()} –{" "}
+            {new Date(b.end_at).toLocaleString()}
           </Text>
 
           <Text style={s.price}>{money(b.total)}</Text>
@@ -1459,12 +1418,34 @@ function AdminBookings({
               </View>
             </View>
           )}
+          {b.status === "CONFIRMED" && (
+            <View style={{ marginTop: 12 }}>
+              <Button
+                title="Check In Customer"
+                onPress={() => onCheckIn(b.id)}
+              />
+            </View>
+          )}
+
+          {b.status === "CHECKED_IN" && (
+            <View style={{ marginTop: 12 }}>
+              <Button
+                title="Check Out Customer"
+                onPress={() => onCheckOut(b.id)}
+              />
+            </View>
+          )}
+
+          {b.status === "COMPLETED" && (
+            <Text style={[s.meta, { fontWeight: "800" }]}>
+              ✓ Customer checked out · Accommodation released
+            </Text>
+          )}
         </View>
       ))}
     </View>
   );
 }
-
 // STATUS BADGE
 function StatusPill({ status }: { status: string }) {
   const color =
@@ -1475,12 +1456,7 @@ function StatusPill({ status }: { status: string }) {
         : C.orange;
 
   return (
-    <View
-      style={[
-        s.pill,
-        { backgroundColor: `${color}18` },
-      ]}
-    >
+    <View style={[s.pill, { backgroundColor: `${color}18` }]}>
       <Text
         style={{
           color,
