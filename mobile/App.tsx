@@ -143,19 +143,47 @@ function Field({
   secureTextEntry?: boolean;
   keyboardType?: "email-address" | "phone-pad" | "default";
 }) {
+  const [visible, setVisible] = useState(false);
+  const isPassword = !!secureTextEntry;
+
   return (
     <View style={{ marginBottom: 14 }}>
       <Text style={s.label}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#9AAEAC"
-        secureTextEntry={secureTextEntry}
-        keyboardType={keyboardType}
-        autoCapitalize={keyboardType === "email-address" ? "none" : "sentences"}
-        style={s.input}
-      />
+
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          borderWidth: 1,
+          borderColor: C.line,
+          borderRadius: 12,
+          backgroundColor: C.white,
+        }}
+      >
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor="#9AAEAC"
+          secureTextEntry={isPassword && !visible}
+          keyboardType={keyboardType}
+          autoCapitalize={
+            keyboardType === "email-address" ? "none" : "sentences"
+          }
+          style={[s.input, { flex: 1, borderWidth: 0 }]}
+        />
+
+        {isPassword && (
+          <Pressable
+            onPress={() => setVisible(!visible)}
+            style={{ paddingHorizontal: 14, paddingVertical: 10 }}
+          >
+            <Text style={{ color: C.ocean, fontWeight: "700" }}>
+              {visible ? "HIDE" : "SHOW"}
+            </Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -205,6 +233,7 @@ export default function App() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
 
