@@ -117,6 +117,46 @@ const migrate = db.transaction(() => {
     CREATE INDEX IF NOT EXISTS idx_food_order_items_order
     ON food_order_items(order_id);
   `);
+    // 5. PayMongo checkout and automatic payment verification.
+  addColumn(
+    "payments",
+    "gateway",
+    "TEXT",
+  );
+
+  addColumn(
+    "payments",
+    "checkout_session_id",
+    "TEXT",
+  );
+
+  addColumn(
+    "payments",
+    "checkout_url",
+    "TEXT",
+  );
+
+  addColumn(
+    "payments",
+    "gateway_payment_id",
+    "TEXT",
+  );
+
+  addColumn(
+    "payments",
+    "paid_at",
+    "TEXT",
+  );
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_checkout_session
+    ON payments(checkout_session_id)
+    WHERE checkout_session_id IS NOT NULL;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_gateway_payment
+    ON payments(gateway_payment_id)
+    WHERE gateway_payment_id IS NOT NULL;
+  `);
 
   console.log("Database migration completed.");
 });

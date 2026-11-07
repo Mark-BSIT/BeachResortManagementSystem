@@ -397,6 +397,137 @@ api.get("/admin/dashboard", (_req, res) => {
     },
   });
 });
+// Admin Analytics — uses actual SQLite records
+api.get("/admin/analytics", (req, res) => {
+  const dateSchema = z.object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  });
+
+  const filters = dateSchema.parse(req.query);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultFrom = new Date(Date.now() - 29 * 86400000)
+    .toISOString()
+    .slice(0, 10);
+
+  const from = filters.from ?? defaultFrom;
+  const to = filters.to ?? today;
+
+  if (from > to) {
+    res.status(400).json({
+      error: "Start date cannot be later than end date",
+    });
+    return;
+  }
+
+  const dateRange = (column: string) =>
+    `date(${column}) BETWEEN date(?) AND date(?)`;
+
+  const summary = db.prepare(`
+    SELECT
+      COUNT(*) AS totalBookings,
+      SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS pendingBookings,
+      SUM(CASE WHEN status = 'CONFIRMED' THEN 1 ELSE 0 END) AS confirmedBookings,
+      SUM(CASE WHEN status = 'CHECKED_IN' THEN 1 ELSE 0 END) AS checkedInBookings,
+      SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS completedBookings,
+      SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelledBookings
+    FROM bookings
+    WHERE ${dateRange("created_at")}
+  `).get(from, to) as Record<string, number | null>;
+
+  const revenue = db.prepare(`
+    SELECT
+      COALESCE(SUM(amount), 0) AS totalRevenue,
+      COUNT(*) AS verifiedPayments
+    FROM payments
+    WHERE status = 'VERIFIED'
+      AND ${dateRange("reviewed_at")}
+  `).get(from, to) as Record<string, number>;
+
+  const customers = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM users
+    WHERE role = 'CUSTOMER'
+      AND ${dateRange("created_at")}
+  `).get(from, to) as { total: number };
+
+  const bookingsByKind = db.prepare(`
+    SELECT kind, COUNT(*) AS count
+    FROM bookings
+    WHERE ${dateRange("created_at")}
+    GROUP BY kind
+  `).all(from, to);
+
+  const bookingsByStatus = db.prepare(`
+    SELECT status, COUNT(*) AS count
+    FROM bookings
+    WHERE ${dateRange("created_at")}
+    GROUP BY status
+    ORDER BY count DESC
+  `).all(from, to);
+
+  const paymentsByMethod = db.prepare(`
+    SELECT
+      method,
+      COUNT(*) AS count,
+      COALESCE(SUM(amount), 0) AS total
+    FROM payments
+    WHERE status = 'VERIFIED'
+      AND ${dateRange("reviewed_at")}
+    GROUP BY method
+    ORDER BY total DESC
+  `).all(from, to);
+
+  const revenueTrend = db.prepare(`
+    SELECT
+      date(reviewed_at) AS date,
+      COALESCE(SUM(amount), 0) AS revenue
+    FROM payments
+    WHERE status = 'VERIFIED'
+      AND ${dateRange("reviewed_at")}
+    GROUP BY date(reviewed_at)
+    ORDER BY date ASC
+  `).all(from, to);
+
+  const topAccommodations = db.prepare(`
+    SELECT
+      a.id,
+      a.name,
+      a.category,
+      COUNT(b.id) AS bookingCount
+    FROM accommodations a
+    LEFT JOIN bookings b
+      ON b.accommodation_id = a.id
+      AND ${dateRange("b.created_at")}
+    WHERE a.is_active = 1
+    GROUP BY a.id, a.name, a.category
+    ORDER BY bookingCount DESC, a.name ASC
+    LIMIT 5
+  `).all(from, to);
+
+  res.json({
+    data: {
+      period: { from, to },
+      summary: {
+        totalBookings: Number(summary.totalBookings ?? 0),
+        pendingBookings: Number(summary.pendingBookings ?? 0),
+        confirmedBookings: Number(summary.confirmedBookings ?? 0),
+        checkedInBookings: Number(summary.checkedInBookings ?? 0),
+        completedBookings: Number(summary.completedBookings ?? 0),
+        cancelledBookings: Number(summary.cancelledBookings ?? 0),
+        totalRevenue: Number(revenue.totalRevenue ?? 0),
+        verifiedPayments: Number(revenue.verifiedPayments ?? 0),
+        newCustomers: Number(customers.total ?? 0),
+      },
+      bookingsByKind,
+      bookingsByStatus,
+      paymentsByMethod,
+      revenueTrend,
+      topAccommodations,
+    },
+  });
+});
 api.get("/admin/bookings", (req, res) => {
   const status = typeof req.query.status === "string" ? req.query.status : null;
   const rows = status

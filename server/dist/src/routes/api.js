@@ -295,6 +295,122 @@ api.get("/admin/dashboard", (_req, res) => {
         },
     });
 });
+// Admin Analytics — uses actual SQLite records
+api.get("/admin/analytics", (req, res) => {
+    const dateSchema = z.object({
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    });
+    const filters = dateSchema.parse(req.query);
+    const today = new Date().toISOString().slice(0, 10);
+    const defaultFrom = new Date(Date.now() - 29 * 86400000)
+        .toISOString()
+        .slice(0, 10);
+    const from = filters.from ?? defaultFrom;
+    const to = filters.to ?? today;
+    if (from > to) {
+        res.status(400).json({
+            error: "Start date cannot be later than end date",
+        });
+        return;
+    }
+    const dateRange = (column) => `date(${column}) BETWEEN date(?) AND date(?)`;
+    const summary = db.prepare(`
+    SELECT
+      COUNT(*) AS totalBookings,
+      SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS pendingBookings,
+      SUM(CASE WHEN status = 'CONFIRMED' THEN 1 ELSE 0 END) AS confirmedBookings,
+      SUM(CASE WHEN status = 'CHECKED_IN' THEN 1 ELSE 0 END) AS checkedInBookings,
+      SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS completedBookings,
+      SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelledBookings
+    FROM bookings
+    WHERE ${dateRange("created_at")}
+  `).get(from, to);
+    const revenue = db.prepare(`
+    SELECT
+      COALESCE(SUM(amount), 0) AS totalRevenue,
+      COUNT(*) AS verifiedPayments
+    FROM payments
+    WHERE status = 'VERIFIED'
+      AND ${dateRange("reviewed_at")}
+  `).get(from, to);
+    const customers = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM users
+    WHERE role = 'CUSTOMER'
+      AND ${dateRange("created_at")}
+  `).get(from, to);
+    const bookingsByKind = db.prepare(`
+    SELECT kind, COUNT(*) AS count
+    FROM bookings
+    WHERE ${dateRange("created_at")}
+    GROUP BY kind
+  `).all(from, to);
+    const bookingsByStatus = db.prepare(`
+    SELECT status, COUNT(*) AS count
+    FROM bookings
+    WHERE ${dateRange("created_at")}
+    GROUP BY status
+    ORDER BY count DESC
+  `).all(from, to);
+    const paymentsByMethod = db.prepare(`
+    SELECT
+      method,
+      COUNT(*) AS count,
+      COALESCE(SUM(amount), 0) AS total
+    FROM payments
+    WHERE status = 'VERIFIED'
+      AND ${dateRange("reviewed_at")}
+    GROUP BY method
+    ORDER BY total DESC
+  `).all(from, to);
+    const revenueTrend = db.prepare(`
+    SELECT
+      date(reviewed_at) AS date,
+      COALESCE(SUM(amount), 0) AS revenue
+    FROM payments
+    WHERE status = 'VERIFIED'
+      AND ${dateRange("reviewed_at")}
+    GROUP BY date(reviewed_at)
+    ORDER BY date ASC
+  `).all(from, to);
+    const topAccommodations = db.prepare(`
+    SELECT
+      a.id,
+      a.name,
+      a.category,
+      COUNT(b.id) AS bookingCount
+    FROM accommodations a
+    LEFT JOIN bookings b
+      ON b.accommodation_id = a.id
+      AND ${dateRange("b.created_at")}
+    WHERE a.is_active = 1
+    GROUP BY a.id, a.name, a.category
+    ORDER BY bookingCount DESC, a.name ASC
+    LIMIT 5
+  `).all(from, to);
+    res.json({
+        data: {
+            period: { from, to },
+            summary: {
+                totalBookings: Number(summary.totalBookings ?? 0),
+                pendingBookings: Number(summary.pendingBookings ?? 0),
+                confirmedBookings: Number(summary.confirmedBookings ?? 0),
+                checkedInBookings: Number(summary.checkedInBookings ?? 0),
+                completedBookings: Number(summary.completedBookings ?? 0),
+                cancelledBookings: Number(summary.cancelledBookings ?? 0),
+                totalRevenue: Number(revenue.totalRevenue ?? 0),
+                verifiedPayments: Number(revenue.verifiedPayments ?? 0),
+                newCustomers: Number(customers.total ?? 0),
+            },
+            bookingsByKind,
+            bookingsByStatus,
+            paymentsByMethod,
+            revenueTrend,
+            topAccommodations,
+        },
+    });
+});
 api.get("/admin/bookings", (req, res) => {
     const status = typeof req.query.status === "string" ? req.query.status : null;
     const rows = status
@@ -319,6 +435,55 @@ api.get("/admin/payments", (_req, res) => res.json({
         .prepare("SELECT p.*,u.full_name AS customer_name,b.reference AS booking_reference FROM payments p JOIN users u ON u.id=p.customer_id JOIN bookings b ON b.id=p.booking_id ORDER BY p.created_at DESC")
         .all(),
 }));
+// Admin verifies or rejects a submitted payment
+api.patch("/admin/payments/:id/status", (req, res) => {
+    const d = z
+        .object({
+        status: z.enum(["VERIFIED", "REJECTED"]),
+    })
+        .parse(req.body);
+    const tx = db.transaction(() => {
+        const payment = db
+            .prepare("SELECT * FROM payments WHERE id = ?")
+            .get(req.params.id);
+        if (!payment) {
+            throw new Error("Payment not found");
+        }
+        if (payment.status !== "SUBMITTED") {
+            throw new Error("This payment has already been reviewed");
+        }
+        db.prepare(`
+      UPDATE payments
+      SET status = ?,
+          reviewed_by = ?,
+          reviewed_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(d.status, req.user.id, payment.id);
+        enqueueEvent(d.status === "VERIFIED" ? "paymentVerified" : "paymentRejected", {
+            paymentId: payment.id,
+            bookingId: payment.booking_id,
+            customerId: payment.customer_id,
+        });
+        db.prepare(`
+      INSERT INTO notifications (
+        id, user_id, title, message, type
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `).run(randomUUID(), payment.customer_id, d.status === "VERIFIED"
+            ? "Payment verified"
+            : "Payment rejected", d.status === "VERIFIED"
+            ? "Your payment has been verified by the resort."
+            : "Your payment was rejected. Please contact the resort or submit a valid payment.", "PAYMENT");
+        return {
+            id: payment.id,
+            status: d.status,
+            message: d.status === "VERIFIED"
+                ? "Payment verified successfully"
+                : "Payment rejected successfully",
+        };
+    });
+    res.json({ data: tx.immediate() });
+});
 // Record cash actually collected by the resort
 api.post("/admin/payments/cash-collection", (req, res) => {
     const schema = z.object({

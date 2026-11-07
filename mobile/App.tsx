@@ -62,6 +62,47 @@ type Payment = {
   reference_number?: string;
 };
 
+type AnalyticsData = {
+  period: {
+    from: string;
+    to: string;
+  };
+  summary: {
+    totalBookings: number;
+    pendingBookings: number;
+    confirmedBookings: number;
+    checkedInBookings: number;
+    completedBookings: number;
+    cancelledBookings: number;
+    totalRevenue: number;
+    verifiedPayments: number;
+    newCustomers: number;
+  };
+  bookingsByKind: {
+    kind: string;
+    count: number;
+  }[];
+  bookingsByStatus: {
+    status: string;
+    count: number;
+  }[];
+  paymentsByMethod: {
+    method: string;
+    count: number;
+    total: number;
+  }[];
+  revenueTrend: {
+    date: string;
+    revenue: number;
+  }[];
+  topAccommodations: {
+    id: string;
+    name: string;
+    category: string;
+    bookingCount: number;
+  }[];
+};
+
 const C = {
   ocean: "#087E8B",
   teal: "#13A89E",
@@ -184,7 +225,11 @@ export default function App() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [dashboard, setDashboard] = useState<Record<string, number>>({});
-
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<
+    "today" | "week" | "month" | "year"
+  >("month");
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [payBooking, setPayBooking] = useState<Booking | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payReference, setPayReference] = useState("");
@@ -276,10 +321,53 @@ export default function App() {
       setRefreshing(false);
     }
   };
+  const loadAnalytics = async (
+    period: "today" | "week" | "month" | "year" = analyticsPeriod,
+  ) => {
+    setAnalyticsLoading(true);
+
+    try {
+      const now = new Date();
+      const from = new Date(now);
+
+      if (period === "today") {
+        // Current day
+      } else if (period === "week") {
+        from.setDate(now.getDate() - 6);
+      } else if (period === "month") {
+        from.setDate(now.getDate() - 29);
+      } else {
+        from.setMonth(0, 1);
+      }
+
+      const formatISODate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      };
+
+      const result = await api<{ data: AnalyticsData }>(
+        `/admin/analytics?from=${formatISODate(from)}&to=${formatISODate(now)}`,
+      );
+
+      setAnalytics(result.data);
+    } catch (error) {
+      Alert.alert("Analytics Error", (error as Error).message);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
 
   useEffect(() => {
     load();
   }, [user]);
+
+  useEffect(() => {
+    if (user?.role === "ADMIN" && tab === "Analytics") {
+      loadAnalytics();
+    }
+  }, [user, tab, analyticsPeriod]);
 
   // Login and registration
   const auth = async () => {
@@ -971,6 +1059,209 @@ export default function App() {
             />
           </>
         )}
+        {/* ADMIN ANALYTICS */}
+        {user.role === "ADMIN" && tab === "Analytics" && (
+          <>
+            <Header
+              title="Resort Analytics"
+              subtitle="Real-time business performance based on your resort records."
+            />
+
+            <View style={s.toggleRow}>
+              {(["today", "week", "month", "year"] as const).map((period) => (
+                <Pressable
+                  key={period}
+                  onPress={() => setAnalyticsPeriod(period)}
+                  style={[
+                    s.toggle,
+                    analyticsPeriod === period && s.toggleActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      s.toggleText,
+                      analyticsPeriod === period && { color: C.white },
+                    ]}
+                  >
+                    {period === "today"
+                      ? "Today"
+                      : period === "week"
+                        ? "Week"
+                        : period === "month"
+                          ? "Month"
+                          : "Year"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {analyticsLoading && !analytics ? (
+              <View style={s.empty}>
+                <ActivityIndicator size="large" color={C.ocean} />
+                <Text style={s.meta}>Loading analytics...</Text>
+              </View>
+            ) : analytics ? (
+              <>
+                <Text style={s.meta}>
+                  Period: {analytics.period.from} to {analytics.period.to}
+                </Text>
+
+                <View style={s.stats}>
+                  {[
+                    ["Revenue", money(analytics.summary.totalRevenue)],
+                    ["Bookings", analytics.summary.totalBookings],
+                    ["New customers", analytics.summary.newCustomers],
+                    ["Verified payments", analytics.summary.verifiedPayments],
+                  ].map(([label, value]) => (
+                    <View key={String(label)} style={s.stat}>
+                      <Text style={s.statValue}>{value}</Text>
+                      <Text style={s.statLabel}>{label}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <Header title="Booking status" />
+
+                <View style={s.bookingCard}>
+                  {analytics.bookingsByStatus.length === 0 ? (
+                    <Empty text="No bookings recorded for this period." />
+                  ) : (
+                    analytics.bookingsByStatus.map((item) => (
+                      <View key={item.status} style={{ marginBottom: 14 }}>
+                        <View style={s.rowBetween}>
+                          <Text style={s.meta}>
+                            {item.status.replace("_", " ")}
+                          </Text>
+                          <Text style={[s.meta, { fontWeight: "900" }]}>
+                            {item.count}
+                          </Text>
+                        </View>
+                        <View style={analyticsStyles.track}>
+                          <View
+                            style={[
+                              analyticsStyles.bar,
+                              {
+                                width: `${
+                                  analytics.summary.totalBookings > 0
+                                    ? (item.count /
+                                        analytics.summary.totalBookings) *
+                                      100
+                                    : 0
+                                }%`,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </View>
+
+                <Header title="Reservation types" />
+
+                <View style={s.stats}>
+                  {analytics.bookingsByKind.map((item) => (
+                    <View key={item.kind} style={s.stat}>
+                      <Text style={s.statValue}>{item.count}</Text>
+                      <Text style={s.statLabel}>
+                        {item.kind.replace("_", " ")}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                <Header title="Revenue trend" />
+
+                <View style={s.bookingCard}>
+                  {analytics.revenueTrend.length === 0 ? (
+                    <Empty text="No verified revenue for this period." />
+                  ) : (
+                    analytics.revenueTrend.map((item) => {
+                      const maxRevenue = Math.max(
+                        ...analytics.revenueTrend.map((x) => x.revenue),
+                        1,
+                      );
+
+                      return (
+                        <View key={item.date} style={{ marginBottom: 14 }}>
+                          <View style={s.rowBetween}>
+                            <Text style={s.meta}>{item.date}</Text>
+                            <Text style={[s.meta, { fontWeight: "900" }]}>
+                              {money(item.revenue)}
+                            </Text>
+                          </View>
+                          <View style={analyticsStyles.track}>
+                            <View
+                              style={[
+                                analyticsStyles.bar,
+                                {
+                                  width: `${(item.revenue / maxRevenue) * 100}%`,
+                                },
+                              ]}
+                            />
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+
+                <Header title="Payment methods" />
+
+                <View style={s.bookingCard}>
+                  {analytics.paymentsByMethod.length === 0 ? (
+                    <Empty text="No verified payments for this period." />
+                  ) : (
+                    analytics.paymentsByMethod.map((item) => (
+                      <View key={item.method} style={s.rowBetween}>
+                        <View>
+                          <Text style={s.cardTitle}>
+                            {item.method.replaceAll("_", " ")}
+                          </Text>
+                          <Text style={s.meta}>
+                            {item.count} verified payment(s)
+                          </Text>
+                        </View>
+                        <Text style={s.price}>{money(item.total)}</Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+
+                <Header title="Top accommodations" />
+
+                {analytics.topAccommodations.length === 0 ? (
+                  <Empty text="No accommodation bookings for this period." />
+                ) : (
+                  analytics.topAccommodations.map((item, index) => (
+                    <View key={item.id} style={s.bookingCard}>
+                      <View style={s.rowBetween}>
+                        <Text style={s.cardTitle}>
+                          {index + 1}. {item.name}
+                        </Text>
+                        <Text style={s.price}>
+                          {item.bookingCount} bookings
+                        </Text>
+                      </View>
+                      <Text style={s.meta}>{item.category}</Text>
+                    </View>
+                  ))
+                )}
+
+                <Button
+                  title={
+                    analyticsLoading ? "Refreshing..." : "Refresh analytics"
+                  }
+                  onPress={() => loadAnalytics()}
+                  disabled={analyticsLoading}
+                  secondary
+                />
+              </>
+            ) : (
+              <Empty text="Analytics data is not available." />
+            )}
+          </>
+        )}
 
         {/* ADMIN PAYMENTS */}
         {user.role === "ADMIN" && tab === "Payments" && (
@@ -1066,7 +1357,7 @@ export default function App() {
       {/* BOTTOM NAVIGATION */}
       <View style={s.nav}>
         {(user.role === "ADMIN"
-          ? ["Home", "Reservations", "Payments", "Inventory"]
+          ? ["Home", "Analytics", "Reservations", "Payments", "Inventory"]
           : ["Home", "Explore", "My Bookings", "Payments", "Profile"]
         ).map((x, i) => (
           <Pressable
@@ -1082,7 +1373,7 @@ export default function App() {
             <Text style={[s.navIcon, tab === x && { color: C.ocean }]}>
               {
                 (user.role === "ADMIN"
-                  ? ["▦", "▤", "₱", "⌂"]
+                  ? ["▦", "▥", "▤", "₱", "⌂"]
                   : ["⌂", "◈", "▣", "₱", "○"])[i]
               }
             </Text>
@@ -1878,5 +2169,19 @@ const s = StyleSheet.create({
     fontWeight: "800",
     fontSize: 12,
     color: C.navy,
+  },
+});
+const analyticsStyles = StyleSheet.create({
+  track: {
+    height: 10,
+    backgroundColor: "#E5EEEA",
+    borderRadius: 10,
+    overflow: "hidden",
+    marginTop: 7,
+  },
+  bar: {
+    height: "100%",
+    backgroundColor: C.teal,
+    borderRadius: 10,
   },
 });
