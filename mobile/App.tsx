@@ -74,9 +74,25 @@ type AnalyticsData = {
     checkedInBookings: number;
     completedBookings: number;
     cancelledBookings: number;
+    totalFunctionHallBookings: number;
+    combinedTotalBookings: number;
     totalRevenue: number;
     verifiedPayments: number;
     newCustomers: number;
+  };
+  functionHall: {
+    totalBookings: number;
+    pendingBookings: number;
+    confirmedBookings: number;
+    completedBookings: number;
+    rejectedBookings: number;
+    cancelledBookings: number;
+    totalRevenue: number;
+    verifiedPayments: number;
+    bookingsByStatus: {
+      status: string;
+      count: number;
+    }[];
   };
   bookingsByKind: {
     kind: string;
@@ -1138,7 +1154,10 @@ export default function App() {
                 <View style={s.stats}>
                   {[
                     ["Revenue", money(analytics.summary.totalRevenue)],
-                    ["Bookings", analytics.summary.totalBookings],
+                    [
+                      "Combined bookings",
+                      analytics.summary.combinedTotalBookings,
+                    ],
                     ["New customers", analytics.summary.newCustomers],
                     ["Verified payments", analytics.summary.verifiedPayments],
                   ].map(([label, value]) => (
@@ -1150,6 +1169,76 @@ export default function App() {
                 </View>
 
                 <Header title="Booking status" />
+
+                <Header
+                  title="Function Hall Performance"
+                  subtitle="Reservation and verified payment summary."
+                />
+
+                <View style={s.stats}>
+                  {[
+                    [
+                      "Total reservations",
+                      analytics.functionHall.totalBookings,
+                    ],
+                    ["Pending", analytics.functionHall.pendingBookings],
+                    ["Confirmed", analytics.functionHall.confirmedBookings],
+                    ["Completed", analytics.functionHall.completedBookings],
+                    ["Rejected", analytics.functionHall.rejectedBookings],
+                    ["Cancelled", analytics.functionHall.cancelledBookings],
+                    [
+                      "Verified revenue",
+                      money(analytics.functionHall.totalRevenue),
+                    ],
+                    [
+                      "Verified payments",
+                      analytics.functionHall.verifiedPayments,
+                    ],
+                  ].map(([label, value]) => (
+                    <View key={String(label)} style={s.stat}>
+                      <Text style={s.statValue}>{value}</Text>
+                      <Text style={s.statLabel}>{label}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <Header title="Function Hall Reservation Status" />
+
+                <View style={s.bookingCard}>
+                  {analytics.functionHall.bookingsByStatus.length === 0 ? (
+                    <Empty text="No Function Hall reservations for this period." />
+                  ) : (
+                    analytics.functionHall.bookingsByStatus.map((item) => (
+                      <View key={item.status} style={{ marginBottom: 14 }}>
+                        <View style={s.rowBetween}>
+                          <Text style={s.meta}>
+                            {item.status.replace("_", " ")}
+                          </Text>
+                          <Text style={[s.meta, { fontWeight: "900" }]}>
+                            {item.count}
+                          </Text>
+                        </View>
+
+                        <View style={analyticsStyles.track}>
+                          <View
+                            style={[
+                              analyticsStyles.bar,
+                              {
+                                width: `${
+                                  analytics.functionHall.totalBookings > 0
+                                    ? (item.count /
+                                        analytics.functionHall.totalBookings) *
+                                      100
+                                    : 0
+                                }%`,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </View>
 
                 <View style={s.bookingCard}>
                   {analytics.bookingsByStatus.length === 0 ? (

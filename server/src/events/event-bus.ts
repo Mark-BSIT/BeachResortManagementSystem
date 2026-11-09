@@ -6,8 +6,15 @@ export type DomainEventName =
   | 'paymentSubmitted' | 'paymentVerified' | 'paymentRejected'
   | 'accommodationCreated' | 'accommodationUpdated' | 'accommodationDeactivated'
   | 'notificationCreated' | 'notificationRead' | 'customerCheckedIn' | 'customerCheckedOut'
-  | 'reviewSubmitted' | "cashPaymentCollected";
-
+  | 'reviewSubmitted' | "cashPaymentCollected"
+  | 'functionHallBookingSubmitted'
+  | 'functionHallPaymentSubmitted'
+  | 'functionHallBookingApproved'
+  | 'functionHallBookingRejected'
+  | 'functionHallBookingCancelled'
+  | "functionHallPaymentVerified"
+  | "functionHallPaymentRejected"
+  | "functionHallCashPaymentCollected"
 export interface DomainEvent<T = Record<string, unknown>> {
   eventId: string;
   name: DomainEventName;
