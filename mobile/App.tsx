@@ -756,6 +756,28 @@ export default function App() {
     }
   };
 
+  const editInventory = (item: Accommodation) => {
+    const kindMap: Record<string, InventoryKind> = {
+      Cottages: "COTTAGE",
+      Rooms: "ROOM",
+      "Day-use Packages": "DAY_USE_PACKAGE",
+      "Overnight Packages": "OVERNIGHT_PACKAGE",
+    };
+
+    setEditingInventoryId(item.id);
+    setInventoryKind(kindMap[item.category] ?? "COTTAGE");
+    setInventoryName(item.name);
+    setInventoryDescription(item.description ?? "");
+    setInventoryImageUrl(item.image_url ?? "");
+    setInventoryAdults(String(item.capacity_adults));
+    setInventoryChildren(String(item.capacity_children));
+    setInventoryDayPrice(String(item.day_price));
+    setInventoryNightPrice(String(item.night_price));
+    setInventoryExtraAdultFee("0");
+    setInventoryExtraChildFee("0");
+    setShowInventoryForm(true);
+  };
+
   // Save new inventory to the database
   const saveInventory = async () => {
     if (!inventoryName.trim() || !inventoryDescription.trim()) {
@@ -849,26 +871,38 @@ export default function App() {
     try {
       setBusy(true);
 
-      await api("/admin/accommodations", {
-        method: "POST",
-        body: JSON.stringify({
-          name: inventoryName.trim(),
-          category:
-            categoryMap[
-              inventoryKind as Exclude<InventoryKind, "FUNCTION_HALL">
-            ],
-          description: inventoryDescription.trim(),
-          capacityAdults,
-          capacityChildren,
-          dayPrice,
-          nightPrice,
-          extraAdultFee,
-          extraChildFee,
-          imageUrl: inventoryImageUrl.trim() || undefined,
-        }),
-      });
+      await api(
+        editingInventoryId
+          ? `/admin/accommodations/${editingInventoryId}`
+          : "/admin/accommodations",
+        {
+          method: editingInventoryId ? "PATCH" : "POST",
+          body: JSON.stringify({
+            name: inventoryName.trim(),
+            category:
+              categoryMap[
+                inventoryKind as Exclude<InventoryKind, "FUNCTION_HALL">
+              ],
+            description: inventoryDescription.trim(),
+            capacityAdults,
+            capacityChildren,
+            dayPrice,
+            nightPrice,
+            extraAdultFee,
+            extraChildFee,
+            imageUrl: inventoryImageUrl.trim() || undefined,
+          }),
+        },
+      );
 
-      Alert.alert("Success", "Inventory has been added and is now active.");
+      Alert.alert(
+        "Success",
+        editingInventoryId
+          ? "Inventory has been updated successfully."
+          : "Inventory has been added and is now active.",
+      );
+
+      setEditingInventoryId(null);
       setShowInventoryForm(false);
       await load();
     } catch (error) {
@@ -1697,7 +1731,6 @@ export default function App() {
               title="Resort Inventory"
               subtitle="Manage Function Halls, Cottages, Rooms, and Packages."
             />
-
             {!showInventoryForm ? (
               <Button
                 title="+ Add New Inventory"
@@ -1875,24 +1908,61 @@ export default function App() {
                 </Text>
 
                 <Button
-                  title={busy ? "Saving..." : "Save Inventory"}
+                  title={
+                    busy
+                      ? "Saving..."
+                      : editingInventoryId
+                        ? "Update Inventory"
+                        : "Save Inventory"
+                  }
                   onPress={saveInventory}
                   disabled={busy}
                 />
               </View>
             )}
-
             <Header title="Existing Inventory" />
+            {items.length === 0 ? (
+              <Empty text="No accommodations have been added yet." />
+            ) : (
+              items.map((item) => (
+                <View key={item.id} style={s.bookingCard}>
+                  {item.image_url ? (
+                    <Image
+                      source={{ uri: item.image_url }}
+                      style={{
+                        width: "100%",
+                        height: 180,
+                        borderRadius: 10,
+                        marginBottom: 12,
+                      }}
+                      resizeMode="cover"
+                    />
+                  ) : null}
+                  <Text style={s.category}>{item.category.toUpperCase()}</Text>
 
-            <AccommodationList
-              items={items}
-              onSelect={(item) =>
-                Alert.alert("Inventory", `Selected: ${item.name}`)
-              }
-            />
+                  <Text style={s.cardTitle}>{item.name}</Text>
+                  <Text style={s.meta}>{item.description}</Text>
+                  <Text style={s.meta}>
+                    Capacity: {item.capacity_adults} adults,{" "}
+                    {item.capacity_children} children
+                  </Text>
+                  <Text style={s.price}>
+                    Day: {money(item.day_price)} • Night:{" "}
+                    {money(item.night_price)}
+                  </Text>
 
+                  <View style={{ marginTop: 12 }}>
+                    <Button
+                      title="Edit Inventory"
+                      secondary
+                      onPress={() => editInventory(item)}
+                    />
+                  </View>
+                </View>
+              ))
+            )}
+            /
             <Header title="Function Halls" />
-
             {functionHalls.length === 0 ? (
               <Empty text="No Function Hall listings yet." />
             ) : (
