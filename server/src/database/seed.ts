@@ -1,3 +1,4 @@
+
 import bcrypt from "bcryptjs";
 import { randomUUID } from "node:crypto";
 import { db } from "./connection.js";
@@ -147,22 +148,6 @@ const items = [
     10, 5, 0, 6500, 200, 100,
     "https://images.unsplash.com/photo-1540541338287-41700207dee6?w=1000",
   ],
-
-  // OTHER RESORT FACILITIES
-  [
-    "Function Hall",
-    "Function Hall",
-    "Private event and celebration space for special occasions.",
-    80, 20, 5000, 0, 0, 0,
-    "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=1000",
-  ],
-  [
-    "Karaoke Lounge",
-    "Karaoke / Entertainment",
-    "Private karaoke room for family gatherings and celebrations.",
-    15, 0, 1200, 0, 0, 0,
-    "https://images.unsplash.com/photo-1516280440614-37939bbacd81?w=1000",
-  ],
 ] as const;
 
 // ==========================================
@@ -194,6 +179,34 @@ for (const item of items) {
 
   insert.run(id, ...item);
 }
+
+// ==========================================
+// FUNCTION HALL INVENTORY
+// ==========================================
+
+const functionHallInsert = db.prepare(`
+  INSERT OR IGNORE INTO function_halls (
+    id,
+    name,
+    description,
+    capacity,
+    hourly_rate,
+    whole_day_rate,
+    image_url,
+    is_active
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+`);
+
+functionHallInsert.run(
+  "main-function-hall",
+  "Main Function Hall",
+  "Private event and celebration space for weddings, birthdays, reunions, and special occasions.",
+  100,
+  0,
+  5000,
+  "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=1000"
+);
 
 // ==========================================
 // RESORT SERVICES
@@ -229,6 +242,7 @@ const services = [
     1000,
   ],
 ] as const;
+
 for (const service of services) {
   serviceInsert.run(...service);
 }

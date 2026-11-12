@@ -1308,6 +1308,12 @@ api.get("/admin/customers", (req, res) => {
             .all(q, q),
     });
 });
+api.get("/admin/accommodations", (_req, res) => {
+    const rows = db
+        .prepare("SELECT * FROM accommodations ORDER BY created_at DESC")
+        .all();
+    res.json({ data: rows });
+});
 api.post("/admin/accommodations", (req, res) => {
     const d = z
         .object({
@@ -1331,12 +1337,19 @@ api.post("/admin/accommodations", (req, res) => {
 api.patch("/admin/accommodations/:id", (req, res) => {
     const d = z
         .object({
-        name: z.string().min(2).optional(),
-        description: z.string().optional(),
+        name: z.string().trim().min(2).optional(),
+        category: z.string().trim().min(2).optional(),
+        description: z.string().max(1000).optional(),
+        capacityAdults: z.number().int().positive().optional(),
+        capacityChildren: z.number().int().nonnegative().optional(),
         dayPrice: z.number().nonnegative().optional(),
         nightPrice: z.number().nonnegative().optional(),
+        extraAdultFee: z.number().nonnegative().optional(),
+        extraChildFee: z.number().nonnegative().optional(),
+        imageUrl: z.string().url().nullable().optional(),
         isActive: z.boolean().optional(),
     })
+        .refine((data) => Object.values(data).some((value) => value !== undefined), { message: "Provide at least one field to update" })
         .parse(req.body);
     const row = db
         .prepare("SELECT id FROM accommodations WHERE id=?")
@@ -1347,16 +1360,25 @@ api.patch("/admin/accommodations/:id", (req, res) => {
     }
     const fields = {
         name: d.name,
+        category: d.category,
         description: d.description,
+        capacity_adults: d.capacityAdults,
+        capacity_children: d.capacityChildren,
         day_price: d.dayPrice,
         night_price: d.nightPrice,
+        extra_adult_fee: d.extraAdultFee,
+        extra_child_fee: d.extraChildFee,
+        image_url: d.imageUrl,
         is_active: d.isActive === undefined ? undefined : Number(d.isActive),
     };
-    const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
-    if (entries.length)
-        db.prepare(`UPDATE accommodations SET ${entries.map(([k]) => `${k}=?`).join(",")} WHERE id=?`).run(...entries.map(([, v]) => v), req.params.id);
-    enqueueEvent("accommodationUpdated", { accommodationId: req.params.id });
-    res.json({ message: "Accommodation updated" });
+    const entries = Object.entries(fields).filter(([, value]) => value !== undefined);
+    db.prepare(`UPDATE accommodations
+     SET ${entries.map(([key]) => `${key}=?`).join(", ")}
+     WHERE id=?`).run(...entries.map(([, value]) => value), req.params.id);
+    enqueueEvent("accommodationUpdated", {
+        accommodationId: req.params.id,
+    });
+    res.json({ message: "Accommodation updated successfully" });
 });
 api.delete("/admin/accommodations/:id", (req, res) => {
     const result = db

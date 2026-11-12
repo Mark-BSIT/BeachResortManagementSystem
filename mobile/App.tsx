@@ -28,6 +28,13 @@ type User = {
   fullName: string;
 };
 
+type InventoryKind =
+  | "FUNCTION_HALL"
+  | "COTTAGE"
+  | "ROOM"
+  | "DAY_USE_PACKAGE"
+  | "OVERNIGHT_PACKAGE";
+
 type Accommodation = {
   id: string;
   name: string;
@@ -37,6 +44,16 @@ type Accommodation = {
   capacity_children: number;
   day_price: number;
   night_price: number;
+  image_url?: string;
+};
+
+type FunctionHall = {
+  id: string;
+  name: string;
+  description: string;
+  capacity: number;
+  hourly_rate: number;
+  whole_day_rate: number;
   image_url?: string;
 };
 
@@ -257,7 +274,32 @@ export default function App() {
   const [tab, setTab] = useState("Home");
 
   const [items, setItems] = useState<Accommodation[]>([]);
+  const [functionHalls, setFunctionHalls] = useState<FunctionHall[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("All");
+
+  // Admin inventory editor states
+  const [showInventoryForm, setShowInventoryForm] = useState(false);
+  const [editingInventoryId, setEditingInventoryId] = useState<string | null>(
+    null,
+  );
+
+  const [inventoryKind, setInventoryKind] = useState<InventoryKind>("COTTAGE");
+
+  const [inventoryName, setInventoryName] = useState("");
+  const [inventoryDescription, setInventoryDescription] = useState("");
+  const [inventoryImageUrl, setInventoryImageUrl] = useState("");
+
+  const [inventoryCapacity, setInventoryCapacity] = useState("50");
+  const [inventoryAdults, setInventoryAdults] = useState("2");
+  const [inventoryChildren, setInventoryChildren] = useState("0");
+
+  const [inventoryDayPrice, setInventoryDayPrice] = useState("0");
+  const [inventoryNightPrice, setInventoryNightPrice] = useState("0");
+  const [inventoryExtraAdultFee, setInventoryExtraAdultFee] = useState("0");
+  const [inventoryExtraChildFee, setInventoryExtraChildFee] = useState("0");
+
+  const [inventoryHourlyRate, setInventoryHourlyRate] = useState("0");
+  const [inventoryWholeDayRate, setInventoryWholeDayRate] = useState("0");
 
   const categories = [
     "All",
@@ -334,31 +376,35 @@ export default function App() {
 
     try {
       if (user.role === "CUSTOMER") {
-        const [a, b, p] = await Promise.all([
+        const [a, b, p, h] = await Promise.all([
           api<{ data: Accommodation[] }>("/accommodations"),
           api<{ data: Booking[] }>("/bookings/mine"),
           api<{ data: Payment[] }>("/payments/mine"),
+          api<{ data: FunctionHall[] }>("/function-halls"),
         ]);
 
         setItems(a.data);
         setBookings(b.data);
         setPayments(p.data);
+        setFunctionHalls(h.data);
 
         uiEvents.emit("catalogLoaded", {
           count: a.data.length,
         });
       } else {
-        const [d, b, p, a] = await Promise.all([
+        const [d, b, p, a, h] = await Promise.all([
           api<{ data: Record<string, number> }>("/admin/dashboard"),
           api<{ data: Booking[] }>("/admin/bookings"),
           api<{ data: Payment[] }>("/admin/payments"),
-          api<{ data: Accommodation[] }>("/accommodations"),
+          api<{ data: Accommodation[] }>("/admin/accommodations"),
+          api<{ data: FunctionHall[] }>("/admin/function-halls"),
         ]);
 
         setDashboard(d.data);
         setBookings(b.data);
         setPayments(p.data);
         setItems(a.data);
+        setFunctionHalls(h.data);
       }
     } catch (e) {
       Alert.alert("Unable to refresh", (e as Error).message);
@@ -710,6 +756,128 @@ export default function App() {
     }
   };
 
+  // Save new inventory to the database
+  const saveInventory = async () => {
+    if (!inventoryName.trim() || !inventoryDescription.trim()) {
+      Alert.alert(
+        "Required fields",
+        "Please enter the inventory name and description.",
+      );
+      return;
+    }
+
+    if (inventoryKind === "FUNCTION_HALL") {
+      const capacity = Number(inventoryCapacity);
+      const hourlyRate = Number(inventoryHourlyRate);
+      const wholeDayRate = Number(inventoryWholeDayRate);
+
+      if (
+        !Number.isInteger(capacity) ||
+        capacity < 1 ||
+        !Number.isFinite(hourlyRate) ||
+        hourlyRate < 0 ||
+        !Number.isFinite(wholeDayRate) ||
+        wholeDayRate < 0
+      ) {
+        Alert.alert(
+          "Invalid details",
+          "Please enter a valid capacity and rates.",
+        );
+        return;
+      }
+
+      try {
+        setBusy(true);
+
+        await api("/admin/function-halls", {
+          method: "POST",
+          body: JSON.stringify({
+            name: inventoryName.trim(),
+            description: inventoryDescription.trim(),
+            capacity,
+            hourlyRate,
+            wholeDayRate,
+            imageUrl: inventoryImageUrl.trim() || undefined,
+          }),
+        });
+
+        Alert.alert(
+          "Success",
+          "Function Hall has been added and is now active.",
+        );
+        setShowInventoryForm(false);
+        await load();
+      } catch (error) {
+        Alert.alert("Save failed", (error as Error).message);
+      } finally {
+        setBusy(false);
+      }
+
+      return;
+    }
+
+    const capacityAdults = Number(inventoryAdults);
+    const capacityChildren = Number(inventoryChildren);
+    const dayPrice = Number(inventoryDayPrice);
+    const nightPrice = Number(inventoryNightPrice);
+    const extraAdultFee = Number(inventoryExtraAdultFee);
+    const extraChildFee = Number(inventoryExtraChildFee);
+
+    if (
+      !Number.isInteger(capacityAdults) ||
+      capacityAdults < 1 ||
+      !Number.isInteger(capacityChildren) ||
+      capacityChildren < 0 ||
+      ![dayPrice, nightPrice, extraAdultFee, extraChildFee].every(
+        (value) => Number.isFinite(value) && value >= 0,
+      )
+    ) {
+      Alert.alert("Invalid details", "Please check the capacities and prices.");
+      return;
+    }
+
+    const categoryMap: Record<
+      Exclude<InventoryKind, "FUNCTION_HALL">,
+      string
+    > = {
+      COTTAGE: "Cottages",
+      ROOM: "Rooms",
+      DAY_USE_PACKAGE: "Day-use Packages",
+      OVERNIGHT_PACKAGE: "Overnight Packages",
+    };
+
+    try {
+      setBusy(true);
+
+      await api("/admin/accommodations", {
+        method: "POST",
+        body: JSON.stringify({
+          name: inventoryName.trim(),
+          category:
+            categoryMap[
+              inventoryKind as Exclude<InventoryKind, "FUNCTION_HALL">
+            ],
+          description: inventoryDescription.trim(),
+          capacityAdults,
+          capacityChildren,
+          dayPrice,
+          nightPrice,
+          extraAdultFee,
+          extraChildFee,
+          imageUrl: inventoryImageUrl.trim() || undefined,
+        }),
+      });
+
+      Alert.alert("Success", "Inventory has been added and is now active.");
+      setShowInventoryForm(false);
+      await load();
+    } catch (error) {
+      Alert.alert("Save failed", (error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const title = useMemo(
     () => (user?.role === "ADMIN" ? "Resort Console" : "Tide & Haven"),
     [user],
@@ -910,6 +1078,77 @@ export default function App() {
                 </Pressable>
               ))}
             </View>
+            <Header
+              title="Function Hall"
+              subtitle="Celebrate your special occasions with us."
+            />
+
+            <View style={s.bookingCard}>
+              <View style={s.rowBetween}>
+                <Text style={s.cardTitle}>Function Halls</Text>
+                <Text style={[s.link, { fontSize: 13 }]}>
+                  {functionHalls.length} available
+                </Text>
+              </View>
+
+              <Text style={s.meta}>
+                Active Function Hall listings available for reservation. Select
+                your preferred schedule to check actual availability.
+              </Text>
+            </View>
+
+            {functionHalls.length === 0 ? (
+              <Empty text="No Function Hall is currently listed." />
+            ) : (
+              functionHalls.map((hall) => (
+                <Pressable
+                  key={hall.id}
+                  style={s.listCard}
+                  onPress={() =>
+                    Alert.alert(
+                      hall.name,
+                      `${hall.description}\n\nCapacity: ${hall.capacity} guests\nHourly rate: ${money(hall.hourly_rate)}\nWhole-day rate (8 hours): ${money(hall.whole_day_rate)}`,
+                    )
+                  }
+                >
+                  {!!hall.image_url && (
+                    <Image
+                      source={{ uri: hall.image_url }}
+                      style={s.cardImage}
+                    />
+                  )}
+
+                  <View style={{ padding: 14 }}>
+                    <Text style={s.category}>EVENT VENUE</Text>
+
+                    <Text style={s.cardTitle}>{hall.name}</Text>
+
+                    <Text style={s.meta}>{hall.description}</Text>
+
+                    <Text style={s.meta}>Capacity: {hall.capacity} guests</Text>
+
+                    <Text style={s.price}>
+                      {money(hall.hourly_rate)} / hour
+                    </Text>
+
+                    <Text style={s.meta}>
+                      Whole day (8 hours): {money(hall.whole_day_rate)}
+                    </Text>
+
+                    <Text style={[s.link, { marginTop: 12 }]}>
+                      View Function Hall details →
+                    </Text>
+                  </View>
+                </Pressable>
+              ))
+            )}
+
+            <Header title="Guest favorites" />
+
+            <AccommodationList
+              items={items.slice(0, 3)}
+              onSelect={setSelected}
+            />
 
             <Header title="Guest favorites" />
 
@@ -1455,19 +1694,220 @@ export default function App() {
         {user.role === "ADMIN" && tab === "Inventory" && (
           <>
             <Header
-              title="Accommodation inventory"
-              subtitle="Active listings customers can reserve."
+              title="Resort Inventory"
+              subtitle="Manage Function Halls, Cottages, Rooms, and Packages."
             />
+
+            {!showInventoryForm ? (
+              <Button
+                title="+ Add New Inventory"
+                onPress={() => {
+                  setEditingInventoryId(null);
+                  setInventoryKind("COTTAGE");
+                  setInventoryName("");
+                  setInventoryDescription("");
+                  setInventoryImageUrl("");
+                  setInventoryCapacity("50");
+                  setInventoryAdults("2");
+                  setInventoryChildren("0");
+                  setInventoryDayPrice("0");
+                  setInventoryNightPrice("0");
+                  setInventoryExtraAdultFee("0");
+                  setInventoryExtraChildFee("0");
+                  setInventoryHourlyRate("0");
+                  setInventoryWholeDayRate("0");
+                  setShowInventoryForm(true);
+                }}
+              />
+            ) : (
+              <View style={s.bookingCard}>
+                <View style={s.rowBetween}>
+                  <Text style={s.cardTitle}>
+                    {editingInventoryId ? "Edit Inventory" : "Add Inventory"}
+                  </Text>
+
+                  <Pressable onPress={() => setShowInventoryForm(false)}>
+                    <Text style={s.link}>Cancel</Text>
+                  </Pressable>
+                </View>
+
+                <Text style={[s.label, { marginTop: 16 }]}>
+                  Select inventory type
+                </Text>
+
+                {(
+                  [
+                    ["FUNCTION_HALL", "Function Hall"],
+                    ["COTTAGE", "Cottage"],
+                    ["ROOM", "Room"],
+                    ["DAY_USE_PACKAGE", "Day-use Package"],
+                    ["OVERNIGHT_PACKAGE", "Overnight Package"],
+                  ] as [InventoryKind, string][]
+                ).map(([value, label]) => (
+                  <Pressable
+                    key={value}
+                    onPress={() => setInventoryKind(value)}
+                    style={[
+                      s.toggle,
+                      {
+                        backgroundColor:
+                          inventoryKind === value ? C.ocean : "#E5EEEA",
+                        marginBottom: 7,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        s.toggleText,
+                        {
+                          color: inventoryKind === value ? C.white : C.navy,
+                        },
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+
+                <Field
+                  label="Name"
+                  value={inventoryName}
+                  onChangeText={setInventoryName}
+                  placeholder="Enter inventory name"
+                />
+
+                <Field
+                  label="Description"
+                  value={inventoryDescription}
+                  onChangeText={setInventoryDescription}
+                  placeholder="Describe this facility or package"
+                />
+
+                <Field
+                  label="Image URL (optional)"
+                  value={inventoryImageUrl}
+                  onChangeText={setInventoryImageUrl}
+                  placeholder="https://example.com/image.jpg"
+                />
+
+                {inventoryKind === "FUNCTION_HALL" ? (
+                  <>
+                    <Field
+                      label="Maximum guest capacity"
+                      value={inventoryCapacity}
+                      onChangeText={setInventoryCapacity}
+                      placeholder="50"
+                      keyboardType="phone-pad"
+                    />
+
+                    <Field
+                      label="Hourly rate (PHP)"
+                      value={inventoryHourlyRate}
+                      onChangeText={setInventoryHourlyRate}
+                      placeholder="0"
+                      keyboardType="phone-pad"
+                    />
+
+                    <Field
+                      label="Whole-day rate (8 hours, PHP)"
+                      value={inventoryWholeDayRate}
+                      onChangeText={setInventoryWholeDayRate}
+                      placeholder="0"
+                      keyboardType="phone-pad"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Field
+                      label="Adult capacity"
+                      value={inventoryAdults}
+                      onChangeText={setInventoryAdults}
+                      placeholder="2"
+                      keyboardType="phone-pad"
+                    />
+
+                    <Field
+                      label="Children capacity"
+                      value={inventoryChildren}
+                      onChangeText={setInventoryChildren}
+                      placeholder="0"
+                      keyboardType="phone-pad"
+                    />
+
+                    <Field
+                      label="Day-use price (PHP)"
+                      value={inventoryDayPrice}
+                      onChangeText={setInventoryDayPrice}
+                      placeholder="0"
+                      keyboardType="phone-pad"
+                    />
+
+                    <Field
+                      label="Overnight price (PHP)"
+                      value={inventoryNightPrice}
+                      onChangeText={setInventoryNightPrice}
+                      placeholder="0"
+                      keyboardType="phone-pad"
+                    />
+
+                    <Field
+                      label="Extra adult fee (PHP)"
+                      value={inventoryExtraAdultFee}
+                      onChangeText={setInventoryExtraAdultFee}
+                      placeholder="0"
+                      keyboardType="phone-pad"
+                    />
+
+                    <Field
+                      label="Extra child fee (PHP)"
+                      value={inventoryExtraChildFee}
+                      onChangeText={setInventoryExtraChildFee}
+                      placeholder="0"
+                      keyboardType="phone-pad"
+                    />
+                  </>
+                )}
+
+                <Text style={s.meta}>
+                  {inventoryKind === "FUNCTION_HALL"
+                    ? "Function Hall reservations use hourly or 8-hour whole-day pricing."
+                    : "Enter the applicable day-use and overnight prices for this listing."}
+                </Text>
+
+                <Button
+                  title={busy ? "Saving..." : "Save Inventory"}
+                  onPress={saveInventory}
+                  disabled={busy}
+                />
+              </View>
+            )}
+
+            <Header title="Existing Inventory" />
 
             <AccommodationList
               items={items}
-              onSelect={() =>
-                Alert.alert(
-                  "Inventory",
-                  "Accommodation editing is available through the secured API; a full editor screen is not included in this mobile build.",
-                )
+              onSelect={(item) =>
+                Alert.alert("Inventory", `Selected: ${item.name}`)
               }
             />
+
+            <Header title="Function Halls" />
+
+            {functionHalls.length === 0 ? (
+              <Empty text="No Function Hall listings yet." />
+            ) : (
+              functionHalls.map((hall) => (
+                <View key={hall.id} style={s.bookingCard}>
+                  <Text style={s.cardTitle}>{hall.name}</Text>
+                  <Text style={s.meta}>{hall.description}</Text>
+                  <Text style={s.meta}>Capacity: {hall.capacity} guests</Text>
+                  <Text style={s.price}>{money(hall.hourly_rate)} / hour</Text>
+                  <Text style={s.meta}>
+                    Whole day: {money(hall.whole_day_rate)}
+                  </Text>
+                </View>
+              ))
+            )}
           </>
         )}
       </ScrollView>
